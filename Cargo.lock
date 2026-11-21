@@ -1139,6 +1139,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "crossterm",
  "directories",
  "ratatui",
  "rusqlite",
@@ -1149,6 +1150,7 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "unicode-width",
 ]
 
 [[package]]

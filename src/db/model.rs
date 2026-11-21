@@ -40,6 +40,22 @@ impl Kind {
             Self::Snippet => "snippet",
         }
     }
+
+    pub const fn next(self) -> Self {
+        match self {
+            Self::Note => Self::Todo,
+            Self::Todo => Self::Snippet,
+            Self::Snippet => Self::Note,
+        }
+    }
+
+    pub const fn prev(self) -> Self {
+        match self {
+            Self::Note => Self::Snippet,
+            Self::Todo => Self::Note,
+            Self::Snippet => Self::Todo,
+        }
+    }
 }
 
 impl fmt::Display for Kind {

@@ -12,13 +12,14 @@ quicknotes 0.1.0
 
 ## Status
 
-Phase 1 complete: configuration, SQLite storage with full-text search, and the
-Kanagawa theme. The interactive TUI arrives in phase 2.
+Phase 2 complete: the TUI shell with a three-pane layout, section sidebar,
+navigable list, preview and status line. Items are still read-only — creating
+and editing arrives in phase 3.
 
 ## Build and run
 
 ```sh
-cargo run          # temporary smoke entrypoint (phase 1)
+cargo run          # opens the TUI (or prints a summary when piped)
 cargo test
 ```
 
@@ -28,6 +29,21 @@ The binary is named `qn`:
 cargo build --release
 ./target/release/qn
 ```
+
+## Keys
+
+| Key | Action |
+|---|---|
+| `↑` `↓` | move in the focused pane (scroll the preview) |
+| `←` `→` | cycle focus between visible panes |
+| `Tab` / `Shift+Tab` | next / previous section |
+| `Home` / `End` | first / last item |
+| `PageUp` / `PageDown` | jump a page |
+| `r` | reload from the database |
+| `q`, `Esc`, `Ctrl+C` | quit |
+
+The sidebar hides below 56 columns and the preview below 78, so narrow
+terminals stay usable.
 
 ## Storage
 
@@ -63,11 +79,12 @@ terminals without truecolor.
 | Phase | Scope |
 |---|---|
 | 1 | Config, SQLite + FTS5, Kanagawa theme ✅ |
-| 2 | TUI shell: event loop, three-pane layout, navigation |
+| 2 | TUI shell: event loop, three-pane layout, navigation ✅ |
 | 3 | Create/edit/delete with editor overlay and markdown preview |
 | 4 | Todo interactions, snippet highlighting, tags |
 | 5 | Incremental search and command palette |
 | 6 | `qn doctor`, CLI, markdown export, polish |
+| 7 | Release: release-please, CI, binaries and `install.sh` |
 
 Font note: quicknotes uses Nerd Font glyphs but cannot change your terminal
 font. Configure **Iosevka Nerd Font Propo** in your terminal; `qn doctor`
