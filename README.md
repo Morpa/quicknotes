@@ -12,9 +12,10 @@ quicknotes 0.1.0
 
 ## Status
 
-Phase 3 complete: create, edit and delete notes, todos and snippets through an
-editor overlay, with markdown preview, a split live preview and idle autosave.
-Todo interactions, snippet highlighting and tags arrive in phase 4.
+Phase 4 complete: todos can be completed, prioritized and given a due date;
+snippets are syntax-highlighted with the active Kanagawa palette and copied to
+the clipboard; items carry tags, with a picker, chips and a sidebar filter.
+Incremental search and the command palette arrive in phase 5.
 
 ## Build and run
 
@@ -42,8 +43,19 @@ cargo build --release
 | `Enter`, `e` | edit the selected item |
 | `n` | new item in the active section |
 | `Delete` | delete the selected item (asks for confirmation) |
+| `Space`, `x` | complete / reopen the selected todo |
+| `p` | cycle the todo priority (none → medium → high) |
+| `s` | cycle the sort order (smart, updated, created, title, due, priority) |
+| `y` | copy the selected item's body to the clipboard |
+| `t` | tag picker for the selected item |
+| `#` | filter the lists by a tag |
 | `r` | reload from the database |
-| `q`, `Esc`, `Ctrl+C` | quit |
+| `Esc` | clear the tag filter, or quit when there is none |
+| `q`, `Ctrl+C` | quit |
+
+In the sidebar, `↑` `↓` walk the sections and then the tags; `Enter` on a tag
+turns its filter on or off. In the tag picker, type to search, `Space` toggles
+a tag on the item (a new name offers to create it) and `Esc` closes it.
 
 Inside the editor:
 
@@ -54,14 +66,19 @@ Inside the editor:
 | `Tab` / `Shift+Tab` | next / previous field (`Tab` indents inside the body) |
 | `Enter` | next field from title/language; newline in the body |
 | `Ctrl+P` | toggle the live markdown preview |
+| `Ctrl+T` | jump to the tags field |
+
+Todos also have a due date (`2026-12-31`, `today`, `tomorrow`, `+3d`, `+2w` or
+empty) and a priority (`←` `→`). Tags are comma- or space-separated.
 
 The editor autosaves after 1.2 seconds of inactivity once the title is not
 empty, so a crash or a closed terminal does not lose the draft. Cancelling an
 autosaved edit restores the previous version; cancelling an autosaved new item
 removes it.
 
-Notes and todos are rendered as markdown in the preview; snippets stay
-verbatim until the Kanagawa syntax theme lands in phase 4.
+Notes and todos are rendered as markdown in the preview; snippets are
+highlighted by language (syntect's default grammars, so TypeScript and TOML
+fall back to plain text; `ts`/`tsx`/`js` use the JavaScript grammar).
 
 The sidebar hides below 56 columns and the preview below 78, so narrow
 terminals stay usable.
@@ -102,7 +119,7 @@ terminals without truecolor.
 | 1 | Config, SQLite + FTS5, Kanagawa theme ✅ |
 | 2 | TUI shell: event loop, three-pane layout, navigation ✅ |
 | 3 | Create/edit/delete, editor overlay, markdown preview, autosave ✅ |
-| 4 | Todo interactions, snippet highlighting, tags |
+| 4 | Todo interactions, snippet highlighting, tags ✅ |
 | 5 | Incremental search and command palette |
 | 6 | `qn doctor`, CLI, markdown export, polish |
 | 7 | Release: release-please, CI, binaries and `install.sh` |

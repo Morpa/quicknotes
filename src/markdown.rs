@@ -1,14 +1,15 @@
 //! Markdown rendering for the preview pane and the editor split view.
 //!
-//! Notes and todos are rendered as markdown; snippets stay verbatim until the
-//! syntax-highlighting theme arrives in phase 4. Styles come from the active
-//! Kanagawa palette, so no colors are defined here.
+//! Notes and todos are rendered as markdown; snippets are syntax-highlighted
+//! with the active Kanagawa palette. Styles come from the palette, so no colors
+//! are defined here.
 
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Text;
 use tui_markdown::{AlertKind, Options, StyleSheet, from_str_with_options};
 
 use crate::db::Kind;
+use crate::highlight::highlight;
 use crate::ui::theme::Theme;
 
 /// Markdown styles mapped onto the semantic roles of the active theme.
@@ -124,13 +125,17 @@ impl StyleSheet for KanagawaStyleSheet {
     }
 }
 
-/// Renders `body` for `kind` at `width` columns.
-///
-/// Snippets are returned verbatim: their language-aware highlighting lands in
-/// phase 4.
-pub fn render<'a>(body: &'a str, kind: Kind, theme: &Theme, width: u16) -> Text<'a> {
+/// Renders `body` for `kind` at `width` columns. Snippets ignore `width` and
+/// are highlighted as `language` instead of parsed as markdown.
+pub fn render<'a>(
+    body: &'a str,
+    kind: Kind,
+    language: Option<&str>,
+    theme: &Theme,
+    width: u16,
+) -> Text<'a> {
     if kind == Kind::Snippet {
-        return Text::raw(body);
+        return highlight(body, language, theme);
     }
 
     let options = Options::new(KanagawaStyleSheet::new(theme)).table_width(width.max(1));
@@ -156,6 +161,7 @@ mod tests {
         let text = render(
             "# Title\n\nbody with **emphasis**",
             Kind::Note,
+            None,
             &theme(),
             40,
         );
@@ -168,7 +174,7 @@ mod tests {
 
     #[test]
     fn snippets_are_verbatim() {
-        let text = render("# not a heading", Kind::Snippet, &theme(), 40);
+        let text = render("# not a heading", Kind::Snippet, None, &theme(), 40);
         assert_eq!(text.to_string(), "# not a heading");
     }
 
@@ -177,6 +183,7 @@ mod tests {
         let text = render(
             "- one\n- two\n\n| a | b |\n|---|---|\n| 1 | 2 |",
             Kind::Note,
+            None,
             &theme(),
             40,
         );

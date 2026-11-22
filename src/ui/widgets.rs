@@ -1,7 +1,10 @@
 //! Small text helpers shared by the panes.
 
 use chrono::{DateTime, Datelike, Local, NaiveDate, Utc};
+use ratatui::text::Span;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+use crate::ui::theme::Theme;
 
 pub fn display_width(text: &str) -> usize {
     UnicodeWidthStr::width(text)
@@ -44,6 +47,21 @@ pub fn truncate(text: &str, width: usize) -> String {
     }
     output.push('…');
     output
+}
+
+/// Tags as ` #tag ` chips on the surface color, separated by a space.
+pub fn chips(tags: &[String], theme: &Theme) -> Vec<Span<'static>> {
+    let mut spans = Vec::with_capacity(tags.len() * 2);
+    for (index, tag) in tags.iter().enumerate() {
+        if index > 0 {
+            spans.push(Span::raw(" "));
+        }
+        spans.push(Span::styled(
+            format!(" #{tag} "),
+            theme.tag().bg(theme.surface),
+        ));
+    }
+    spans
 }
 
 pub fn relative_time(moment: DateTime<Utc>, now: DateTime<Local>) -> String {

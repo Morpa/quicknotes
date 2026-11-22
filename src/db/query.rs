@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use anyhow::{Context, Result, bail};
-use chrono::Utc;
+use chrono::{NaiveDate, Utc};
 use rusqlite::{Connection, OptionalExtension, Row, params, params_from_iter, types::Value};
 
 use super::{Database, Item, Kind, NewItem};
@@ -19,6 +19,80 @@ pub enum TodoState {
     Done,
 }
 
+/// How list results are ordered. `Smart` is the default: pinned first, open
+/// todos before done ones, then due date, priority and recency.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SortOrder {
+    #[default]
+    Smart,
+    Updated,
+    Created,
+    Title,
+    Due,
+    Priority,
+}
+
+impl SortOrder {
+    pub const ALL: [SortOrder; 6] = [
+        Self::Smart,
+        Self::Updated,
+        Self::Created,
+        Self::Title,
+        Self::Due,
+        Self::Priority,
+    ];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Smart => "smart",
+            Self::Updated => "updated",
+            Self::Created => "created",
+            Self::Title => "title",
+            Self::Due => "due",
+            Self::Priority => "priority",
+        }
+    }
+
+    pub fn next(self) -> Self {
+        let index = Self::ALL.iter().position(|sort| *sort == self).unwrap_or(0);
+        Self::ALL[(index + 1) % Self::ALL.len()]
+    }
+
+    const fn order_by(self) -> &'static str {
+        match self {
+            Self::Smart => {
+                "i.pinned DESC,
+                 CASE WHEN i.kind = 'todo' THEN i.done ELSE 0 END ASC,
+                 CASE WHEN i.due IS NULL THEN 1 ELSE 0 END ASC,
+                 i.due ASC,
+                 i.priority DESC,
+                 i.updated_at DESC,
+                 i.id DESC"
+            }
+            Self::Updated => "i.pinned DESC, i.updated_at DESC, i.id DESC",
+            Self::Created => "i.pinned DESC, i.created_at DESC, i.id DESC",
+            Self::Title => "i.pinned DESC, i.title COLLATE NOCASE ASC, i.id ASC",
+            Self::Due => {
+                "i.pinned DESC,
+                 CASE WHEN i.kind = 'todo' THEN i.done ELSE 0 END ASC,
+                 CASE WHEN i.due IS NULL THEN 1 ELSE 0 END ASC,
+                 i.due ASC,
+                 i.updated_at DESC,
+                 i.id DESC"
+            }
+            Self::Priority => {
+                "i.pinned DESC,
+                 CASE WHEN i.kind = 'todo' THEN i.done ELSE 0 END ASC,
+                 i.priority DESC,
+                 CASE WHEN i.due IS NULL THEN 1 ELSE 0 END ASC,
+                 i.due ASC,
+                 i.updated_at DESC,
+                 i.id DESC"
+            }
+        }
+    }
+}
+
 /// Filters shared by list views, the CLI and the search palette.
 #[derive(Debug, Clone, Default)]
 pub struct ItemQuery {
@@ -27,6 +101,7 @@ pub struct ItemQuery {
     pub todo_state: TodoState,
     pub search: Option<String>,
     pub pinned_only: bool,
+    pub sort: SortOrder,
     pub limit: Option<usize>,
 }
 
@@ -160,15 +235,8 @@ impl Database {
             sql.push_str(&conditions.join(" AND "));
         }
 
-        sql.push_str(
-            " ORDER BY i.pinned DESC,
-                       CASE WHEN i.kind = 'todo' THEN i.done ELSE 0 END ASC,
-                       CASE WHEN i.due IS NULL THEN 1 ELSE 0 END ASC,
-                       i.due ASC,
-                       i.priority DESC,
-                       i.updated_at DESC,
-                       i.id DESC",
-        );
+        sql.push_str(" ORDER BY ");
+        sql.push_str(query.sort.order_by());
 
         if let Some(limit) = query.limit {
             sql.push_str(" LIMIT ?");
@@ -302,6 +370,38 @@ impl Database {
             Some(done) => self.set_done(id, !done),
             None => bail!("todo {id} does not exist"),
         }
+    }
+
+    /// Sets the priority (clamped to 0..=2) and returns the stored value.
+    pub fn set_priority(&mut self, id: i64, priority: u8) -> Result<u8> {
+        let priority = priority.min(2);
+        let changed = self
+            .conn
+            .execute(
+                "UPDATE items SET priority = ?1, updated_at = ?2 WHERE id = ?3",
+                params![priority, Utc::now(), id],
+            )
+            .context("updating priority")?;
+
+        if changed == 0 {
+            bail!("item {id} does not exist");
+        }
+        Ok(priority)
+    }
+
+    pub fn set_due(&mut self, id: i64, due: Option<NaiveDate>) -> Result<()> {
+        let changed = self
+            .conn
+            .execute(
+                "UPDATE items SET due = ?1, updated_at = ?2 WHERE id = ?3",
+                params![due, Utc::now(), id],
+            )
+            .context("updating due date")?;
+
+        if changed == 0 {
+            bail!("item {id} does not exist");
+        }
+        Ok(())
     }
 
     pub fn set_pinned(&mut self, id: i64, pinned: bool) -> Result<()> {

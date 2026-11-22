@@ -136,3 +136,77 @@ fn delete_asks_for_confirmation() {
     assert!(text.contains("Delete"));
     assert!(text.contains("y confirm"));
 }
+
+fn buffer(app: &App, width: u16, height: u16) -> ratatui::buffer::Buffer {
+    let backend = TestBackend::new(width, height);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| quicknotes::ui::draw(frame, app))
+        .unwrap();
+    terminal.backend().buffer().clone()
+}
+
+#[test]
+fn snippet_preview_is_syntax_highlighted() {
+    use ratatui::style::Color;
+
+    let mut db = Database::open_in_memory().unwrap();
+    db.insert_item(&NewItem::snippet("main", "rust").body("fn main() {\n    let x = 1;\n}"))
+        .unwrap();
+    let config = Config::default();
+    let theme = Theme::from_config(&config);
+    let mut app = App::new(config, theme, db).unwrap();
+    app.set_area(Rect::new(0, 0, 120, 32));
+    app.update(Action::PrevSection).unwrap();
+
+    let buffer = buffer(&app, 120, 32);
+    let violet = Color::Rgb(0x95, 0x7F, 0xB8);
+    let keyword_cells = buffer
+        .content()
+        .iter()
+        .filter(|cell| cell.fg == violet && !cell.symbol().trim().is_empty())
+        .count();
+
+    // `fn` and `let` are keywords.
+    assert!(keyword_cells >= 5, "{keyword_cells}");
+}
+
+#[test]
+fn tags_render_as_chips_and_the_active_filter_is_marked() {
+    let mut db = Database::open_in_memory().unwrap();
+    db.insert_item(&NewItem::note("tagged").body("body").tags(["rust", "cli"]))
+        .unwrap();
+    db.insert_item(&NewItem::note("other").tags(["tui"]))
+        .unwrap();
+    let config = Config::default();
+    let theme = Theme::from_config(&config);
+    let mut app = App::new(config, theme, db).unwrap();
+    app.set_area(Rect::new(0, 0, 120, 32));
+
+    let before = render(&app, 120, 32);
+    assert!(before.contains(" #cli "));
+    assert!(!before.contains('●'));
+
+    app.tag_filter = Some("tui".to_string());
+    app.update(Action::Refresh).unwrap();
+    let after = render(&app, 120, 32);
+    assert!(after.contains('●'));
+    assert!(after.contains("with #tui"));
+}
+
+#[test]
+fn todo_rows_show_priority_and_sort_label() {
+    let mut db = Database::open_in_memory().unwrap();
+    db.insert_item(&NewItem::todo("urgent thing").priority(2))
+        .unwrap();
+    let config = Config::default();
+    let theme = Theme::from_config(&config);
+    let mut app = App::new(config, theme, db).unwrap();
+    app.set_area(Rect::new(0, 0, 120, 32));
+    app.update(Action::NextSection).unwrap();
+    app.update(Action::CycleSort).unwrap();
+
+    let text = render(&app, 120, 32);
+    assert!(text.contains("!!"));
+    assert!(text.contains("by updated"));
+}

@@ -10,6 +10,8 @@ use crossterm::event::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     Quit,
+    /// Esc: clears the tag filter first, quits when there is none.
+    Back,
     NextSection,
     PrevSection,
     Up,
@@ -24,6 +26,12 @@ pub enum Action {
     New,
     Edit,
     Delete,
+    ToggleDone,
+    CyclePriority,
+    CycleSort,
+    Copy,
+    PickTags,
+    FilterTags,
 }
 
 /// Waits up to `timeout` for a key press. Returns `None` on tick or on events
@@ -50,7 +58,14 @@ pub fn map_key(key: KeyEvent) -> Option<Action> {
     }
 
     match key.code {
-        KeyCode::Char('q') | KeyCode::Esc => Some(Action::Quit),
+        KeyCode::Char('q') => Some(Action::Quit),
+        KeyCode::Esc => Some(Action::Back),
+        KeyCode::Char(' ') | KeyCode::Char('x') => Some(Action::ToggleDone),
+        KeyCode::Char('p') => Some(Action::CyclePriority),
+        KeyCode::Char('s') => Some(Action::CycleSort),
+        KeyCode::Char('y') => Some(Action::Copy),
+        KeyCode::Char('t') => Some(Action::PickTags),
+        KeyCode::Char('#') => Some(Action::FilterTags),
         KeyCode::Char('n') => Some(Action::New),
         KeyCode::Char('e') | KeyCode::Enter => Some(Action::Edit),
         KeyCode::Delete => Some(Action::Delete),

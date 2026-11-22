@@ -6,6 +6,7 @@
 
 use std::time::Instant;
 
+use chrono::{Duration, NaiveDate};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
@@ -14,17 +15,23 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui_textarea::{CursorMove, TextArea};
 
-use crate::db::{Item, Kind};
+use crate::db::{Item, Kind, normalize_tags};
 use crate::markdown;
 use crate::ui::theme::Theme;
-use crate::ui::widgets::{display_width, truncate};
+use crate::ui::widgets::{chips, display_width, truncate};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Field {
     Title,
     Language,
+    Due,
+    Priority,
     Body,
+    Tags,
 }
+
+/// Labels for the three priority levels stored in the database.
+pub const PRIORITY_LABELS: [&str; 3] = ["none", "medium", "high"];
 
 pub struct Editor {
     /// Database row being edited, when it already exists.
@@ -37,8 +44,11 @@ pub struct Editor {
     pub dirty: bool,
     pub last_edit: Instant,
     pub error: Option<String>,
+    pub priority: u8,
     title: TextArea<'static>,
     language: TextArea<'static>,
+    due: TextArea<'static>,
+    tags: TextArea<'static>,
     body: TextArea<'static>,
 }
 
@@ -52,11 +62,21 @@ impl Editor {
                 .unwrap_or_default(),
         ]);
         let mut body = TextArea::new(vec![item.map(|item| item.body.clone()).unwrap_or_default()]);
+        let mut due = TextArea::new(vec![
+            item.and_then(|item| item.due)
+                .map(format_due)
+                .unwrap_or_default(),
+        ]);
+        let mut tags = TextArea::new(vec![
+            item.map(|item| item.tags.join(", ")).unwrap_or_default(),
+        ]);
 
         title.move_cursor(CursorMove::End);
         language.move_cursor(CursorMove::End);
+        due.move_cursor(CursorMove::End);
+        tags.move_cursor(CursorMove::End);
 
-        for area in [&mut title, &mut language, &mut body] {
+        for area in [&mut title, &mut language, &mut due, &mut tags, &mut body] {
             area.set_style(theme.text().bg(theme.surface));
             area.set_placeholder_style(theme.faint().bg(theme.surface));
             area.set_cursor_line_style(Style::default());
@@ -68,6 +88,8 @@ impl Editor {
         title.set_placeholder_text("Untitled");
         language.set_placeholder_text("language");
         body.set_placeholder_text("Write something…");
+        due.set_placeholder_text("none · today · tomorrow · +3d · 2026-12-31");
+        tags.set_placeholder_text("comma-separated, e.g. rust, cli");
 
         Self {
             item_id: item.map(|item| item.id),
@@ -78,8 +100,11 @@ impl Editor {
             dirty: false,
             last_edit: Instant::now(),
             error: None,
+            priority: item.map_or(0, |item| item.priority.min(2)),
             title,
             language,
+            due,
+            tags,
             body,
         }
     }
@@ -96,6 +121,22 @@ impl Editor {
         self.language.lines().join("\n")
     }
 
+    pub fn due_text(&self) -> String {
+        self.due.lines().join("")
+    }
+
+    pub fn tags_text(&self) -> String {
+        self.tags.lines().join(" ")
+    }
+
+    /// Tags typed in the tags field, normalized, sorted and deduplicated.
+    pub fn tags_list(&self) -> Vec<String> {
+        normalize_tags(
+            self.tags_text()
+                .split(|character: char| character == ',' || character.is_whitespace()),
+        )
+    }
+
     pub fn normalized_language(&self) -> Option<String> {
         let language = self.language_text().trim().to_lowercase();
         (!language.is_empty()).then_some(language)
@@ -103,10 +144,17 @@ impl Editor {
 
     /// Feeds a key to the focused text area. Returns whether the buffer changed.
     pub fn input(&mut self, key: KeyEvent) -> bool {
+        if self.field == Field::Priority {
+            return self.adjust_priority(key);
+        }
+
         let target = match self.field {
             Field::Title => &mut self.title,
             Field::Language => &mut self.language,
+            Field::Due => &mut self.due,
+            Field::Tags => &mut self.tags,
             Field::Body => &mut self.body,
+            Field::Priority => unreachable!("handled above"),
         };
 
         // Enter switches fields outside the body; it never breaks a one-line
@@ -120,12 +168,55 @@ impl Editor {
         target.input(key)
     }
 
-    pub fn next_field(&mut self, forward: bool) {
-        let order: &[Field] = if self.kind == Kind::Snippet {
-            &[Field::Title, Field::Language, Field::Body]
-        } else {
-            &[Field::Title, Field::Body]
+    /// Left/right (or `-`/`+`, space) change the priority; nothing is typed.
+    fn adjust_priority(&mut self, key: KeyEvent) -> bool {
+        let last = (PRIORITY_LABELS.len() - 1) as u8;
+        let next = match key.code {
+            KeyCode::Right | KeyCode::Char('+') | KeyCode::Char(' ') => {
+                if self.priority >= last {
+                    0
+                } else {
+                    self.priority + 1
+                }
+            }
+            KeyCode::Left | KeyCode::Char('-') => {
+                if self.priority == 0 {
+                    last
+                } else {
+                    self.priority - 1
+                }
+            }
+            _ => return false,
         };
+
+        self.priority = next;
+        true
+    }
+
+    /// Order in which Tab visits the fields. Tags come last so that Tab from
+    /// the title still lands on the body.
+    pub fn field_order(&self) -> &'static [Field] {
+        match self.kind {
+            Kind::Snippet => &[Field::Title, Field::Language, Field::Body, Field::Tags],
+            Kind::Todo => &[
+                Field::Title,
+                Field::Due,
+                Field::Priority,
+                Field::Body,
+                Field::Tags,
+            ],
+            Kind::Note => &[Field::Title, Field::Body, Field::Tags],
+        }
+    }
+
+    pub fn focus(&mut self, field: Field) {
+        if self.field_order().contains(&field) {
+            self.field = field;
+        }
+    }
+
+    pub fn next_field(&mut self, forward: bool) {
+        let order = self.field_order();
 
         let current = order
             .iter()
@@ -146,14 +237,57 @@ impl Editor {
                 self.title_text().trim() != item.title
                     || self.body_text() != item.body
                     || self.normalized_language() != item.language
+                    || self.tags_list() != item.tags
+                    || (self.kind == Kind::Todo
+                        && (self.due_text().trim() != item.due.map(format_due).unwrap_or_default()
+                            || self.priority != item.priority))
             }
             None => {
                 !self.title_text().trim().is_empty()
                     || !self.body_text().trim().is_empty()
                     || !self.language_text().trim().is_empty()
+                    || !self.tags_list().is_empty()
+                    || (self.kind == Kind::Todo
+                        && (!self.due_text().trim().is_empty() || self.priority != 0))
             }
         }
     }
+}
+
+pub fn format_due(date: NaiveDate) -> String {
+    date.format("%Y-%m-%d").to_string()
+}
+
+/// Parses the due field: empty clears the date; accepts `YYYY-MM-DD`,
+/// `today`, `tomorrow`, `+Nd` and `+Nw`.
+pub fn parse_due(input: &str, today: NaiveDate) -> Result<Option<NaiveDate>, String> {
+    let input = input.trim().to_lowercase();
+    let invalid = || format!("Invalid due date “{input}” (try 2026-12-31, tomorrow or +3d)");
+
+    match input.as_str() {
+        "" | "none" | "-" => return Ok(None),
+        "today" => return Ok(Some(today)),
+        "tomorrow" | "tmr" => return Ok(Some(today + Duration::days(1))),
+        _ => {}
+    }
+
+    if let Some(offset) = input.strip_prefix('+') {
+        let (digits, unit) = offset.split_at(offset.len().saturating_sub(1));
+        let amount: i64 = digits.parse().map_err(|_| invalid())?;
+        let days = match unit {
+            "d" => amount,
+            "w" => amount.checked_mul(7).ok_or_else(invalid)?,
+            _ => return Err(invalid()),
+        };
+        return today
+            .checked_add_signed(Duration::days(days))
+            .map(Some)
+            .ok_or_else(invalid);
+    }
+
+    NaiveDate::parse_from_str(&input, "%Y-%m-%d")
+        .map(Some)
+        .map_err(|_| invalid())
 }
 
 /// Draws the editor overlay. The caller is responsible for drawing the shell
@@ -276,12 +410,10 @@ fn render_fields(frame: &mut Frame, area: Rect, editor: &Editor, theme: &Theme) 
 
     let mut y = area.y;
     render_label(frame, area, y, "TITLE", editor.field == Field::Title, theme);
-    y += 1;
-    frame.render_widget(&editor.title, text_input(area, y));
-    y += 1;
+    frame.render_widget(&editor.title, text_input(area, y + 1));
+    y += 3;
 
     if editor.kind == Kind::Snippet {
-        y += 1;
         render_label(
             frame,
             area,
@@ -290,26 +422,96 @@ fn render_fields(frame: &mut Frame, area: Rect, editor: &Editor, theme: &Theme) 
             editor.field == Field::Language,
             theme,
         );
-        y += 1;
-        frame.render_widget(&editor.language, text_input(area, y));
-        y += 1;
+        frame.render_widget(&editor.language, text_input(area, y + 1));
+        y += 3;
     }
 
-    y += 1;
+    if editor.kind == Kind::Todo {
+        render_todo_fields(frame, area, y, editor, theme);
+        y += 3;
+    }
+
     render_label(frame, area, y, "BODY", editor.field == Field::Body, theme);
     y += 1;
 
-    let height = area.bottom().saturating_sub(y);
-    if height == 0 {
-        return;
+    // The tags block (label, input, chips) sits under the body.
+    let tags_block = 3;
+    let height = area.bottom().saturating_sub(y + tags_block + 1);
+    if height > 0 {
+        let body = Rect {
+            x: area.x,
+            y,
+            width: area.width,
+            height,
+        };
+        frame.render_widget(&editor.body, body);
     }
-    let body = Rect {
-        x: area.x,
-        y,
-        width: area.width,
-        height,
+    y += height + 1;
+
+    render_label(frame, area, y, "TAGS", editor.field == Field::Tags, theme);
+    if y + 1 < area.bottom() {
+        frame.render_widget(&editor.tags, text_input(area, y + 1));
+    }
+    if y + 2 < area.bottom() {
+        let tags = editor.tags_list();
+        let line = if tags.is_empty() {
+            Line::from(Span::styled("  no tags", theme.faint()))
+        } else {
+            let mut spans = vec![Span::raw(" ")];
+            spans.extend(chips(&tags, theme));
+            Line::from(spans)
+        };
+        frame.render_widget(
+            Paragraph::new(line),
+            Rect {
+                x: area.x,
+                y: y + 2,
+                width: area.width,
+                height: 1,
+            },
+        );
+    }
+}
+
+/// Due date on the left, priority selector on the right.
+fn render_todo_fields(frame: &mut Frame, area: Rect, y: u16, editor: &Editor, theme: &Theme) {
+    let half = area.width / 2;
+    let left = Rect {
+        width: half.saturating_sub(1).max(1),
+        ..area
     };
-    frame.render_widget(&editor.body, body);
+    let right = Rect {
+        x: area.x + half,
+        width: area.width.saturating_sub(half),
+        ..area
+    };
+
+    render_label(frame, left, y, "DUE", editor.field == Field::Due, theme);
+    frame.render_widget(&editor.due, text_input(left, y + 1));
+
+    let focused = editor.field == Field::Priority;
+    render_label(frame, right, y, "PRIORITY", focused, theme);
+    if y + 1 < right.bottom() {
+        let value = PRIORITY_LABELS[usize::from(editor.priority.min(2))];
+        let style = match editor.priority {
+            2 => theme.danger(),
+            1 => theme.warning(),
+            _ => theme.dimmed(),
+        };
+        let arrows = if focused {
+            theme.accent()
+        } else {
+            theme.faint()
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled("‹ ", arrows),
+                Span::styled(value, style),
+                Span::styled(" ›", arrows),
+            ])),
+            text_input(right, y + 1),
+        );
+    }
 }
 
 fn render_label(frame: &mut Frame, area: Rect, y: u16, text: &str, focused: bool, theme: &Theme) {
@@ -388,7 +590,14 @@ fn render_preview(
     }
 
     let body = editor.body_text();
-    let text = markdown::render(&body, editor.kind, theme, body_area.width);
+    let language = editor.normalized_language();
+    let text = markdown::render(
+        &body,
+        editor.kind,
+        language.as_deref(),
+        theme,
+        body_area.width,
+    );
     let cursor_line = editor.body.cursor().0;
     let scroll = cursor_line.saturating_sub(2).min(u16::MAX as usize) as u16;
 
@@ -405,12 +614,26 @@ fn editor_hints(field: Field, theme: &Theme) -> Line<'static> {
             ("ctrl+s", "save"),
             ("tab", "indent"),
             ("shift+tab", "field"),
+            ("ctrl+t", "tags"),
+            ("ctrl+p", "preview"),
+            ("esc", "cancel"),
+        ],
+        Field::Priority => &[
+            ("ctrl+s", "save"),
+            ("←→", "change"),
+            ("tab", "next field"),
+            ("esc", "cancel"),
+        ],
+        Field::Tags => &[
+            ("ctrl+s", "save"),
+            ("tab", "title"),
             ("ctrl+p", "preview"),
             ("esc", "cancel"),
         ],
         _ => &[
             ("ctrl+s", "save"),
             ("tab", "next field"),
+            ("ctrl+t", "tags"),
             ("ctrl+p", "preview"),
             ("esc", "cancel"),
         ],
@@ -482,6 +705,8 @@ mod tests {
         editor.next_field(true);
         assert_eq!(editor.field, Field::Body);
         editor.next_field(true);
+        assert_eq!(editor.field, Field::Tags);
+        editor.next_field(true);
         assert_eq!(editor.field, Field::Title);
     }
 
@@ -492,5 +717,42 @@ mod tests {
         assert_eq!(editor.field, Field::Language);
         editor.next_field(true);
         assert_eq!(editor.field, Field::Body);
+    }
+}
+
+#[cfg(test)]
+mod due_tests {
+    use super::*;
+
+    fn today() -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, 11, 22).unwrap()
+    }
+
+    #[test]
+    fn parses_relative_and_absolute_dates() {
+        let today = today();
+        assert_eq!(parse_due("", today), Ok(None));
+        assert_eq!(parse_due(" none ", today), Ok(None));
+        assert_eq!(parse_due("Today", today), Ok(Some(today)));
+        assert_eq!(
+            parse_due("tomorrow", today),
+            Ok(Some(today + Duration::days(1)))
+        );
+        assert_eq!(parse_due("+3d", today), Ok(Some(today + Duration::days(3))));
+        assert_eq!(
+            parse_due("+2w", today),
+            Ok(Some(today + Duration::days(14)))
+        );
+        assert_eq!(
+            parse_due("2026-12-31", today),
+            Ok(NaiveDate::from_ymd_opt(2026, 12, 31))
+        );
+    }
+
+    #[test]
+    fn rejects_garbage() {
+        for input in ["soon", "+d", "+3", "+3x", "2026-13-01", "31/12/2026", "+"] {
+            assert!(parse_due(input, today()).is_err(), "{input}");
+        }
     }
 }

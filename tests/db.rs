@@ -272,3 +272,43 @@ fn tags_are_normalized() {
         vec!["async", "rust"]
     );
 }
+
+#[test]
+fn sort_orders_and_priority_updates() {
+    use quicknotes::db::SortOrder;
+
+    let mut db = Database::open_in_memory().unwrap();
+    let low = db.insert_item(&NewItem::todo("b low")).unwrap();
+    let high = db.insert_item(&NewItem::todo("a high")).unwrap();
+
+    assert_eq!(db.set_priority(high.id, 9).unwrap(), 2);
+    assert!(db.set_priority(9_999, 1).is_err());
+
+    fn titles(db: &Database, sort: SortOrder) -> Vec<String> {
+        db.list_items(&ItemQuery {
+            kind: Some(Kind::Todo),
+            sort,
+            ..ItemQuery::default()
+        })
+        .unwrap()
+        .into_iter()
+        .map(|item| item.title)
+        .collect()
+    }
+
+    assert_eq!(titles(&db, SortOrder::Title), ["a high", "b low"]);
+    assert_eq!(titles(&db, SortOrder::Priority), ["a high", "b low"]);
+    assert_eq!(titles(&db, SortOrder::Created), ["a high", "b low"]);
+
+    db.set_done(high.id, true).unwrap();
+    assert_eq!(titles(&db, SortOrder::Priority), ["b low", "a high"]);
+
+    let due = chrono::NaiveDate::from_ymd_opt(2030, 1, 2).unwrap();
+    db.set_due(low.id, Some(due)).unwrap();
+    assert_eq!(db.get_item(low.id).unwrap().unwrap().due, Some(due));
+    db.set_due(low.id, None).unwrap();
+    assert_eq!(db.get_item(low.id).unwrap().unwrap().due, None);
+    assert!(db.set_due(9_999, None).is_err());
+
+    assert_eq!(SortOrder::Priority.next(), SortOrder::Smart);
+}

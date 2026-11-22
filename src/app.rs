@@ -3,21 +3,29 @@
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
+use chrono::{Local, NaiveDate};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::Rect;
 use ratatui::widgets::{Paragraph, Wrap};
 
+use crate::clipboard;
 use crate::config::{Config, Icons};
-use crate::db::{Database, Item, ItemQuery, Kind, NewItem, Stats};
+use crate::db::{Database, Item, ItemQuery, Kind, NewItem, SortOrder, Stats, normalize_tag};
 use crate::event::{self, Action};
 use crate::markdown;
-use crate::ui::editor::{Editor, Field};
+use crate::ui::editor::{Editor, Field, PRIORITY_LABELS, parse_due};
 use crate::ui::layout::{self, Visibility};
+use crate::ui::picker::{RowKind, TagPicker, TagPurpose};
 use crate::ui::theme::Theme;
 
 pub const STATUS_TTL: Duration = Duration::from_secs(4);
 /// Idle time before the editor silently persists its buffers.
 pub const AUTOSAVE_DELAY: Duration = Duration::from_millis(1_200);
+/// Sink for text copied from an item; the system clipboard unless replaced.
+pub type CopyFn = Box<dyn FnMut(&str) -> Result<()>>;
+
+/// Tags listed in the sidebar; the rest are reachable through the picker.
+pub const SIDEBAR_TAGS: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pane {
@@ -32,6 +40,7 @@ pub enum Mode {
     Edit,
     ConfirmDelete,
     ConfirmDiscard,
+    Tags,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,6 +79,8 @@ enum Select {
     Keep,
     First,
     Id(i64),
+    /// Same row index, so completing a todo keeps the cursor in place.
+    Position(usize),
 }
 
 pub struct App {
@@ -95,6 +106,13 @@ pub struct App {
     pub mode: Mode,
     pub editor: Option<Editor>,
     pub pending_delete: Option<PendingDelete>,
+    pub sort: SortOrder,
+    pub tag_filter: Option<String>,
+    /// Row highlighted in the sidebar: sections first, then tags.
+    pub sidebar_row: usize,
+    pub tag_picker: Option<TagPicker>,
+    /// Writes text to the system clipboard; replaced in tests.
+    pub clipboard: CopyFn,
 }
 
 impl App {
@@ -130,6 +148,11 @@ impl App {
             mode: Mode::Normal,
             editor: None,
             pending_delete: None,
+            sort: SortOrder::default(),
+            tag_filter: None,
+            sidebar_row: 0,
+            tag_picker: None,
+            clipboard: Box::new(clipboard::copy),
         };
         app.ensure_visible();
         Ok(app)
@@ -145,6 +168,7 @@ impl App {
             }
             Mode::Edit => self.handle_editor_key(key)?,
             Mode::ConfirmDelete | Mode::ConfirmDiscard => self.handle_confirm_key(key)?,
+            Mode::Tags => self.handle_picker_key(key)?,
         }
         Ok(())
     }
@@ -152,6 +176,7 @@ impl App {
     pub fn update(&mut self, action: Action) -> Result<()> {
         match action {
             Action::Quit => self.should_quit = true,
+            Action::Back => self.back()?,
             Action::NextSection => {
                 self.focus = Pane::List;
                 self.change_section(self.section.next())?;
@@ -170,8 +195,14 @@ impl App {
             Action::PageDown => self.page(false)?,
             Action::Refresh => self.refresh()?,
             Action::New => self.open_new_editor(),
-            Action::Edit => self.open_selected_editor(),
+            Action::Edit => self.edit_or_filter()?,
             Action::Delete => self.request_delete(),
+            Action::ToggleDone => self.toggle_done()?,
+            Action::CyclePriority => self.cycle_priority()?,
+            Action::CycleSort => self.cycle_sort()?,
+            Action::Copy => self.copy_selected(),
+            Action::PickTags => self.open_tag_picker(false),
+            Action::FilterTags => self.open_tag_picker(true),
         }
         Ok(())
     }
@@ -230,6 +261,10 @@ impl App {
     }
 
     pub fn list_summary(&self) -> String {
+        if let Some(tag) = &self.tag_filter {
+            return format!("{} with #{tag}", self.items.len());
+        }
+
         match self.section {
             Kind::Note => self.stats.notes.to_string(),
             Kind::Todo if self.stats.done_todos > 0 => {
@@ -241,6 +276,11 @@ impl App {
             Kind::Todo => format!("{} open", self.stats.open_todos),
             Kind::Snippet => self.stats.snippets.to_string(),
         }
+    }
+
+    /// Tags shown in the sidebar, in display order.
+    pub fn sidebar_tags(&self) -> &[(String, u64)] {
+        &self.tags[..self.tags.len().min(SIDEBAR_TAGS)]
     }
 
     pub fn checkbox(&self, item: &Item) -> &'static str {
@@ -261,6 +301,12 @@ impl App {
                 KeyCode::Char('p') => {
                     if let Some(editor) = &mut self.editor {
                         editor.split = !editor.split;
+                    }
+                    return Ok(());
+                }
+                KeyCode::Char('t') => {
+                    if let Some(editor) = &mut self.editor {
+                        editor.focus(Field::Tags);
                     }
                     return Ok(());
                 }
@@ -304,7 +350,7 @@ impl App {
             KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => match self.mode {
                 Mode::ConfirmDelete => self.confirm_delete()?,
                 Mode::ConfirmDiscard => self.discard_editor()?,
-                Mode::Normal | Mode::Edit => {}
+                Mode::Normal | Mode::Edit | Mode::Tags => {}
             },
             KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc | KeyCode::Char('q') => {
                 self.cancel_confirm();
@@ -423,6 +469,26 @@ impl App {
         };
         let kind = editor.kind;
         let item_id = editor.item_id;
+        let tags = editor.tags_list();
+        let priority = editor.priority;
+        let due_input = editor.due_text();
+
+        // `None` keeps the stored due date: autosave must not drop it while
+        // the field holds a half-typed value.
+        let due: Option<Option<NaiveDate>> = if kind == Kind::Todo {
+            match parse_due(&due_input, Local::now().date_naive()) {
+                Ok(due) => Some(due),
+                Err(_) if autosave => None,
+                Err(message) => {
+                    if let Some(editor) = &mut self.editor {
+                        editor.error = Some(message);
+                    }
+                    return Ok(());
+                }
+            }
+        } else {
+            None
+        };
 
         let saved = match item_id {
             Some(id) => {
@@ -432,6 +498,13 @@ impl App {
                 item.title = title;
                 item.body = body;
                 item.language = language;
+                item.tags = tags;
+                if kind == Kind::Todo {
+                    if let Some(due) = due {
+                        item.due = due;
+                    }
+                    item.priority = priority;
+                }
                 self.db.update_item(&item)?;
                 item
             }
@@ -440,9 +513,9 @@ impl App {
                 title,
                 body,
                 language,
-                due: None,
-                priority: 0,
-                tags: Vec::new(),
+                due: due.flatten(),
+                priority: if kind == Kind::Todo { priority } else { 0 },
+                tags,
             })?,
         };
 
@@ -491,10 +564,7 @@ impl App {
 
         self.stats = self.db.stats()?;
         self.tags = self.db.all_tags()?;
-        self.items = self.db.list_items(&ItemQuery {
-            kind: Some(self.section),
-            ..ItemQuery::default()
-        })?;
+        self.items = self.db.list_items(&self.query())?;
 
         self.selected = match select {
             Select::First => 0,
@@ -506,11 +576,270 @@ impl App {
                 .iter()
                 .position(|item| item.id == id)
                 .unwrap_or(0),
+            Select::Position(index) => index,
         };
         self.selected = self.selected.min(self.items.len().saturating_sub(1));
+        self.clamp_sidebar_row();
 
         self.ensure_visible();
         self.refresh_preview_bounds();
+        Ok(())
+    }
+
+    fn query(&self) -> ItemQuery {
+        ItemQuery {
+            kind: Some(self.section),
+            tag: self.tag_filter.clone(),
+            sort: self.sort,
+            ..ItemQuery::default()
+        }
+    }
+
+    fn section_row(section: Kind) -> usize {
+        Kind::ALL
+            .iter()
+            .position(|kind| *kind == section)
+            .unwrap_or(0)
+    }
+
+    /// Keeps the sidebar cursor on an existing row after tags change.
+    fn clamp_sidebar_row(&mut self) {
+        let rows = Kind::ALL.len() + self.sidebar_tags().len();
+        if self.sidebar_row >= rows {
+            self.sidebar_row = Self::section_row(self.section);
+        }
+    }
+
+    fn back(&mut self) -> Result<()> {
+        if self.tag_filter.take().is_some() {
+            self.reload(Select::First)?;
+            self.set_status("Filter cleared", Tone::Normal);
+            return Ok(());
+        }
+        self.should_quit = true;
+        Ok(())
+    }
+
+    /// Enter edits the item, except on a sidebar tag where it toggles the filter.
+    fn edit_or_filter(&mut self) -> Result<()> {
+        if self.focus == Pane::Sidebar && self.sidebar_row >= Kind::ALL.len() {
+            let tag = self
+                .sidebar_tags()
+                .get(self.sidebar_row - Kind::ALL.len())
+                .map(|(tag, _)| tag.clone());
+            if let Some(tag) = tag {
+                let next = (self.tag_filter.as_deref() != Some(tag.as_str())).then_some(tag);
+                return self.set_tag_filter(next);
+            }
+        }
+
+        self.open_selected_editor();
+        Ok(())
+    }
+
+    fn set_tag_filter(&mut self, tag: Option<String>) -> Result<()> {
+        self.tag_filter = tag;
+        self.list_offset = 0;
+        self.preview_scroll = 0;
+        self.reload(Select::First)?;
+
+        match &self.tag_filter {
+            Some(tag) => {
+                let message = format!("Filter · #{tag} · {}", self.items.len());
+                self.set_status(message, Tone::Success);
+            }
+            None => self.set_status("Filter cleared", Tone::Normal),
+        }
+        Ok(())
+    }
+
+    fn toggle_done(&mut self) -> Result<()> {
+        let Some(item) = self.selected_item() else {
+            self.set_status("Nothing selected", Tone::Warning);
+            return Ok(());
+        };
+        if item.kind != Kind::Todo {
+            self.set_status("Only todos can be completed", Tone::Warning);
+            return Ok(());
+        }
+
+        let (id, title) = (item.id, item.title.clone());
+        let done = self.db.toggle_done(id)?;
+        self.reload(Select::Position(self.selected))?;
+
+        let message = if done {
+            format!("Done · {title}")
+        } else {
+            format!("Reopened · {title}")
+        };
+        self.set_status(message, Tone::Success);
+        Ok(())
+    }
+
+    fn cycle_priority(&mut self) -> Result<()> {
+        let Some(item) = self.selected_item() else {
+            self.set_status("Nothing selected", Tone::Warning);
+            return Ok(());
+        };
+        if item.kind != Kind::Todo {
+            self.set_status("Only todos have a priority", Tone::Warning);
+            return Ok(());
+        }
+
+        let (id, title) = (item.id, item.title.clone());
+        let next = (item.priority + 1) % PRIORITY_LABELS.len() as u8;
+        let priority = self.db.set_priority(id, next)?;
+        self.reload(Select::Id(id))?;
+
+        self.set_status(
+            format!(
+                "Priority · {} · {title}",
+                PRIORITY_LABELS[usize::from(priority)]
+            ),
+            Tone::Success,
+        );
+        Ok(())
+    }
+
+    fn cycle_sort(&mut self) -> Result<()> {
+        self.sort = self.sort.next();
+        self.reload(Select::Keep)?;
+        self.set_status(format!("Sort · {}", self.sort.label()), Tone::Normal);
+        Ok(())
+    }
+
+    fn copy_selected(&mut self) {
+        let Some(item) = self.selected_item() else {
+            self.set_status("Nothing to copy", Tone::Warning);
+            return;
+        };
+        if item.body.is_empty() {
+            self.set_status("Nothing to copy: the body is empty", Tone::Warning);
+            return;
+        }
+
+        let text = item.body.clone();
+        let title = item.title.clone();
+        let lines = text.lines().count();
+
+        match (self.clipboard)(&text) {
+            Ok(()) => self.set_status(format!("Copied · {title} ({lines} lines)"), Tone::Success),
+            Err(error) => {
+                tracing::warn!(error = %format!("{error:#}"), "clipboard write failed");
+                self.set_status("Clipboard unavailable", Tone::Danger);
+            }
+        }
+    }
+
+    fn open_tag_picker(&mut self, filter: bool) {
+        let picker = if filter {
+            let selected = self.tag_filter.iter().cloned().collect();
+            TagPicker::new(TagPurpose::Filter, self.tags.clone(), selected)
+        } else {
+            let Some(item) = self.selected_item() else {
+                self.set_status("Select an item to tag", Tone::Warning);
+                return;
+            };
+            TagPicker::new(
+                TagPurpose::Assign { item_id: item.id },
+                self.tags.clone(),
+                item.tags.clone(),
+            )
+        };
+
+        self.tag_picker = Some(picker);
+        self.mode = Mode::Tags;
+    }
+
+    fn close_tag_picker(&mut self) {
+        self.tag_picker = None;
+        self.mode = Mode::Normal;
+    }
+
+    fn handle_picker_key(&mut self, key: KeyEvent) -> Result<()> {
+        let Some(picker) = &mut self.tag_picker else {
+            self.mode = Mode::Normal;
+            return Ok(());
+        };
+
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            match key.code {
+                KeyCode::Char('c') => self.close_tag_picker(),
+                KeyCode::Char('u') => picker.clear_query(),
+                _ => {}
+            }
+            return Ok(());
+        }
+
+        let assign = matches!(picker.purpose, TagPurpose::Assign { .. });
+        match key.code {
+            KeyCode::Esc => self.close_tag_picker(),
+            KeyCode::Up => picker.move_cursor(-1),
+            KeyCode::Down => picker.move_cursor(1),
+            KeyCode::PageUp => picker.move_cursor(-8),
+            KeyCode::PageDown => picker.move_cursor(8),
+            KeyCode::Home => picker.jump(true),
+            KeyCode::End => picker.jump(false),
+            KeyCode::Backspace => picker.pop(),
+            KeyCode::Enter => self.activate_picker_row()?,
+            KeyCode::Char(' ') if assign => self.activate_picker_row()?,
+            KeyCode::Char(character) if !character.is_whitespace() => picker.push(character),
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn activate_picker_row(&mut self) -> Result<()> {
+        let Some(picker) = &self.tag_picker else {
+            return Ok(());
+        };
+        let Some(row) = picker.current().cloned() else {
+            return Ok(());
+        };
+
+        match picker.purpose {
+            TagPurpose::Filter => {
+                let tag = (row.kind == RowKind::Tag).then_some(row.name);
+                self.close_tag_picker();
+                self.set_tag_filter(tag)
+            }
+            TagPurpose::Assign { item_id } => self.toggle_item_tag(item_id, &row.name),
+        }
+    }
+
+    /// Adds the tag to the item, or removes it when it is already there.
+    fn toggle_item_tag(&mut self, item_id: i64, tag: &str) -> Result<()> {
+        let tag = normalize_tag(tag);
+        let Some(mut item) = self.db.get_item(item_id)? else {
+            self.close_tag_picker();
+            return Ok(());
+        };
+
+        let added = match item.tags.iter().position(|existing| *existing == tag) {
+            Some(index) => {
+                item.tags.remove(index);
+                false
+            }
+            None => {
+                item.tags.push(tag.clone());
+                true
+            }
+        };
+        self.db.update_item(&item)?;
+        self.reload(Select::Id(item_id))?;
+
+        let selected = self
+            .db
+            .get_item(item_id)?
+            .map(|item| item.tags)
+            .unwrap_or_default();
+        if let Some(picker) = &mut self.tag_picker {
+            picker.clear_query();
+            picker.refresh(self.tags.clone(), selected);
+        }
+
+        let verb = if added { "Tagged" } else { "Untagged" };
+        self.set_status(format!("{verb} · #{tag}"), Tone::Success);
         Ok(())
     }
 
@@ -521,6 +850,7 @@ impl App {
     }
 
     fn change_section(&mut self, section: Kind) -> Result<()> {
+        self.sidebar_row = Self::section_row(section);
         if section == self.section {
             return Ok(());
         }
@@ -533,7 +863,7 @@ impl App {
 
     fn move_up(&mut self) -> Result<()> {
         match self.focus {
-            Pane::Sidebar => self.change_section(self.section.prev()),
+            Pane::Sidebar => self.move_sidebar(-1),
             Pane::List => {
                 self.move_selection(-1);
                 Ok(())
@@ -547,13 +877,28 @@ impl App {
 
     fn move_down(&mut self) -> Result<()> {
         match self.focus {
-            Pane::Sidebar => self.change_section(self.section.next()),
+            Pane::Sidebar => self.move_sidebar(1),
             Pane::List => {
                 self.move_selection(1);
                 Ok(())
             }
             Pane::Preview => {
                 self.scroll_preview(1);
+                Ok(())
+            }
+        }
+    }
+
+    /// Moves the sidebar cursor over sections and tags, wrapping at the ends.
+    /// Sections switch immediately; tags wait for Enter.
+    fn move_sidebar(&mut self, delta: isize) -> Result<()> {
+        let rows = (Kind::ALL.len() + self.sidebar_tags().len()) as isize;
+        let next = (self.sidebar_row as isize + delta).rem_euclid(rows) as usize;
+
+        match Kind::ALL.get(next) {
+            Some(section) => self.change_section(*section),
+            None => {
+                self.sidebar_row = next;
                 Ok(())
             }
         }
@@ -683,7 +1028,13 @@ impl App {
 
         let lines = match self.selected_item() {
             Some(item) => {
-                let text = markdown::render(&item.body, item.kind, &self.theme, self.preview_width);
+                let text = markdown::render(
+                    &item.body,
+                    item.kind,
+                    item.language.as_deref(),
+                    &self.theme,
+                    self.preview_width,
+                );
                 let paragraph = if item.kind == Kind::Snippet {
                     Paragraph::new(text)
                 } else {

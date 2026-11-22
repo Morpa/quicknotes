@@ -122,6 +122,43 @@ fn palette(name: ThemeName) -> &'static RawPalette {
     }
 }
 
+/// Colors for each syntax role used by the snippet highlighter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SyntaxPalette {
+    pub text: Rgb,
+    pub comment: Rgb,
+    pub string: Rgb,
+    pub number: Rgb,
+    pub constant: Rgb,
+    pub keyword: Rgb,
+    pub function: Rgb,
+    pub type_name: Rgb,
+    pub operator: Rgb,
+    pub punctuation: Rgb,
+    pub tag: Rgb,
+    pub escape: Rgb,
+}
+
+/// Follows the kanagawa.nvim mapping: violet keywords, blue functions,
+/// green strings, pink numbers, orange constants, aqua types.
+pub fn syntax_palette(name: ThemeName) -> SyntaxPalette {
+    let raw = palette(name);
+    SyntaxPalette {
+        text: raw.fg,
+        comment: raw.dim,
+        string: raw.green,
+        number: raw.pink,
+        constant: raw.orange,
+        keyword: raw.violet,
+        function: raw.blue,
+        type_name: raw.aqua,
+        operator: raw.yellow,
+        punctuation: raw.fg_old,
+        tag: raw.red,
+        escape: raw.blue2,
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Theme {
     pub name: ThemeName,

@@ -8,14 +8,16 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 
 use crate::app::{App, Mode, Pane, Tone};
-use crate::db::{Item, Kind};
+use crate::db::{Item, Kind, SortOrder};
 use crate::markdown;
 use crate::ui::layout::FrameLayout;
 use crate::ui::theme::Theme;
+use crate::ui::widgets::chips;
 use crate::ui::widgets::{display_width, due_label, relative_time, truncate};
 
 pub mod editor;
 pub mod layout;
+pub mod picker;
 pub mod theme;
 pub mod widgets;
 
@@ -48,6 +50,12 @@ pub fn draw(frame: &mut Frame, app: &App) {
         && matches!(app.mode, Mode::Edit | Mode::ConfirmDiscard)
     {
         editor::draw(frame, frame.area(), editor, &app.theme);
+    }
+
+    if let Some(picker) = &app.tag_picker
+        && app.mode == Mode::Tags
+    {
+        picker::draw(frame, frame.area(), picker, &app.theme);
     }
 
     render_confirm(frame, app);
@@ -116,8 +124,10 @@ fn render_sidebar(frame: &mut Frame, rect: Rect, app: &App) {
     if app.tags.is_empty() {
         lines.push(Line::from(Span::styled("  no tags yet", app.theme.faint())));
     } else {
-        for (tag, count) in app.tags.iter().take(8) {
-            lines.push(tag_line(tag, *count, width, app));
+        for (index, (tag, count)) in app.sidebar_tags().iter().enumerate() {
+            let row = Kind::ALL.len() + index;
+            let cursor = app.focus == Pane::Sidebar && app.sidebar_row == row;
+            lines.push(tag_line(tag, *count, width, cursor, app));
         }
     }
 
@@ -170,16 +180,33 @@ fn section_line(kind: Kind, width: usize, app: &App) -> Line<'static> {
     ])
 }
 
-fn tag_line(tag: &str, count: u64, width: usize, app: &App) -> Line<'static> {
+fn tag_line(tag: &str, count: u64, width: usize, cursor: bool, app: &App) -> Line<'static> {
+    let active = app.tag_filter.as_deref() == Some(tag);
+    let base = if cursor {
+        app.theme.selected()
+    } else {
+        app.theme.text()
+    };
+
+    let marker = if active { "●" } else { " " };
     let label = format!(" #{tag}");
     let count = count.to_string();
-    let gap = width.saturating_sub(display_width(&label) + display_width(&count) + 1);
+    let label_width = width.saturating_sub(display_width(&count) + 3);
+    let label = truncate(&label, label_width);
+    let gap = width.saturating_sub(display_width(&label) + display_width(&count) + 3);
+
+    let label_style = if active {
+        base.patch(app.theme.accent()).add_modifier(Modifier::BOLD)
+    } else {
+        base.patch(app.theme.tag())
+    };
 
     Line::from(vec![
-        Span::styled(label, app.theme.tag()),
-        Span::styled(" ".repeat(gap), app.theme.text()),
-        Span::styled(count, app.theme.dimmed()),
-        Span::raw(" "),
+        Span::styled(marker, base.patch(app.theme.accent())),
+        Span::styled(label, label_style),
+        Span::styled(" ".repeat(gap), base),
+        Span::styled(count, base.patch(app.theme.dimmed())),
+        Span::styled(" ", base),
     ])
 }
 
@@ -188,14 +215,22 @@ fn render_list(frame: &mut Frame, layout: &FrameLayout, app: &App) {
         return;
     }
 
-    let header = Line::from(vec![
+    let mut header = vec![
         Span::styled(
             format!(" {}", app.section.label().to_uppercase()),
             app.theme.label(),
         ),
         Span::styled(" · ", app.theme.faint()),
         Span::styled(app.list_summary(), app.theme.dimmed()),
-    ]);
+    ];
+    if app.sort != SortOrder::Smart {
+        header.push(Span::styled(" · ", app.theme.faint()));
+        header.push(Span::styled(
+            format!("by {}", app.sort.label()),
+            app.theme.accent_alt(),
+        ));
+    }
+    let header = Line::from(header);
     frame.render_widget(Paragraph::new(header), layout.list_header);
 
     if app.items.is_empty() {
@@ -289,22 +324,41 @@ fn item_line(
 fn item_meta(item: &Item, now: DateTime<Local>) -> (String, Tone) {
     let today = now.date_naive();
 
-    if item.kind == Kind::Todo
-        && let Some(due) = item.due
-    {
-        let tone = if item.done {
-            Tone::Normal
-        } else if due < today {
-            Tone::Danger
-        } else if (due - today).num_days() <= 1 {
-            Tone::Warning
-        } else {
-            Tone::Normal
-        };
-        return (due_label(due, today), tone);
+    if item.kind != Kind::Todo {
+        return (relative_time(item.updated_at, now), Tone::Normal);
     }
 
-    (relative_time(item.updated_at, now), Tone::Normal)
+    let flag = if item.done || item.priority == 0 {
+        String::new()
+    } else {
+        "!".repeat(usize::from(item.priority.min(2)))
+    };
+
+    let (label, mut tone) = match item.due {
+        Some(due) => {
+            let tone = if item.done {
+                Tone::Normal
+            } else if due < today {
+                Tone::Danger
+            } else if (due - today).num_days() <= 1 {
+                Tone::Warning
+            } else {
+                Tone::Normal
+            };
+            (due_label(due, today), tone)
+        }
+        None => (relative_time(item.updated_at, now), Tone::Normal),
+    };
+
+    if item.priority >= 2 && tone == Tone::Normal && !item.done {
+        tone = Tone::Warning;
+    }
+
+    if flag.is_empty() {
+        (label, tone)
+    } else {
+        (format!("{flag} {label}"), tone)
+    }
 }
 
 fn render_preview(frame: &mut Frame, layout: &FrameLayout, app: &App) {
@@ -381,7 +435,13 @@ fn render_preview(frame: &mut Frame, layout: &FrameLayout, app: &App) {
         return;
     }
 
-    let text = markdown::render(&item.body, item.kind, &app.theme, body_rect.width);
+    let text = markdown::render(
+        &item.body,
+        item.kind,
+        item.language.as_deref(),
+        &app.theme,
+        body_rect.width,
+    );
     let mut paragraph = Paragraph::new(text)
         .style(app.theme.text())
         .scroll((scroll, 0));
@@ -402,9 +462,17 @@ fn preview_meta_line(item: &Item, app: &App) -> Line<'static> {
         spans.push(Span::styled(" · ", theme.faint()));
         spans.push(Span::styled(language.clone(), theme.tag()));
     }
-    for tag in &item.tags {
+    if item.kind == Kind::Todo && item.priority > 0 {
+        let (label, style) = match item.priority {
+            1 => ("medium priority", theme.warning()),
+            _ => ("high priority", theme.danger()),
+        };
         spans.push(Span::styled(" · ", theme.faint()));
-        spans.push(Span::styled(format!("#{tag}"), theme.tag()));
+        spans.push(Span::styled(label, style));
+    }
+    if !item.tags.is_empty() {
+        spans.push(Span::styled(" · ", theme.faint()));
+        spans.extend(chips(&item.tags, theme));
     }
     if let Some(due) = item.due {
         let today = Local::now().date_naive();
@@ -442,7 +510,7 @@ fn render_footer(frame: &mut Frame, rect: Rect, app: &App) {
     let left_width = available.saturating_sub(right_width + 1);
 
     frame.render_widget(
-        Paragraph::new(hints_line(app.focus, &app.theme)),
+        Paragraph::new(hints_line(app)),
         Rect {
             width: left_width as u16,
             ..rect
@@ -482,7 +550,7 @@ fn render_confirm(frame: &mut Frame, app: &App) {
             "y discard · n keep editing",
             app.theme.warning(),
         ),
-        Mode::Normal | Mode::Edit => return,
+        Mode::Normal | Mode::Edit | Mode::Tags => return,
     };
 
     let area = frame.area();
@@ -518,32 +586,32 @@ fn render_confirm(frame: &mut Frame, app: &App) {
     frame.render_widget(Paragraph::new(lines), inner);
 }
 
-fn hints_line(focus: Pane, theme: &Theme) -> Line<'static> {
-    let pairs: &'static [(&'static str, &'static str)] = match focus {
-        Pane::Sidebar => &[
-            ("↑↓", "section"),
-            ("→", "list"),
-            ("n", "new"),
-            ("q", "quit"),
-        ],
-        Pane::List => &[
+fn hints_line(app: &App) -> Line<'static> {
+    let theme = &app.theme;
+    let mut pairs: Vec<(&'static str, &'static str)> = match app.focus {
+        Pane::Sidebar => vec![
             ("↑↓", "move"),
-            ("←→", "pane"),
-            ("tab", "section"),
+            ("enter", "filter tag"),
             ("n", "new"),
-            ("e", "edit"),
-            ("del", "delete"),
             ("q", "quit"),
         ],
-        Pane::Preview => &[
-            ("↑↓", "scroll"),
-            ("←→", "pane"),
-            ("n", "new"),
-            ("e", "edit"),
-            ("del", "delete"),
-            ("q", "quit"),
-        ],
+        Pane::List => vec![("↑↓", "move"), ("n", "new"), ("e", "edit")],
+        Pane::Preview => vec![("↑↓", "scroll"), ("←→", "pane"), ("e", "edit")],
     };
+
+    if app.focus != Pane::Sidebar {
+        match app.section {
+            Kind::Todo => pairs.push(("space", "done")),
+            Kind::Snippet => pairs.push(("y", "copy")),
+            Kind::Note => {}
+        }
+        pairs.extend([
+            ("t", "tags"),
+            ("s", "sort"),
+            ("del", "delete"),
+            ("q", "quit"),
+        ]);
+    }
 
     let mut spans = vec![Span::raw(" ")];
     for (index, (key, label)) in pairs.iter().enumerate() {
