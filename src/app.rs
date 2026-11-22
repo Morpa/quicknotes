@@ -15,6 +15,7 @@ use crate::event::{self, Action};
 use crate::markdown;
 use crate::ui::editor::{Editor, Field, PRIORITY_LABELS, parse_due};
 use crate::ui::layout::{self, Visibility};
+use crate::ui::palette::{Command, Palette};
 use crate::ui::picker::{RowKind, TagPicker, TagPurpose};
 use crate::ui::theme::Theme;
 
@@ -41,6 +42,10 @@ pub enum Mode {
     ConfirmDelete,
     ConfirmDiscard,
     Tags,
+    /// Typing in the search bar.
+    Search,
+    Palette,
+    Help,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,6 +116,9 @@ pub struct App {
     /// Row highlighted in the sidebar: sections first, then tags.
     pub sidebar_row: usize,
     pub tag_picker: Option<TagPicker>,
+    /// Full-text query applied to the lists; empty means no search.
+    pub search: String,
+    pub palette: Option<Palette>,
     /// Writes text to the system clipboard; replaced in tests.
     pub clipboard: CopyFn,
 }
@@ -152,6 +160,8 @@ impl App {
             tag_filter: None,
             sidebar_row: 0,
             tag_picker: None,
+            search: String::new(),
+            palette: None,
             clipboard: Box::new(clipboard::copy),
         };
         app.ensure_visible();
@@ -169,6 +179,9 @@ impl App {
             Mode::Edit => self.handle_editor_key(key)?,
             Mode::ConfirmDelete | Mode::ConfirmDiscard => self.handle_confirm_key(key)?,
             Mode::Tags => self.handle_picker_key(key)?,
+            Mode::Search => self.handle_search_key(key)?,
+            Mode::Palette => self.handle_palette_key(key)?,
+            Mode::Help => self.mode = Mode::Normal,
         }
         Ok(())
     }
@@ -203,6 +216,12 @@ impl App {
             Action::Copy => self.copy_selected(),
             Action::PickTags => self.open_tag_picker(false),
             Action::FilterTags => self.open_tag_picker(true),
+            Action::Search => self.mode = Mode::Search,
+            Action::Palette => {
+                self.palette = Some(Palette::new());
+                self.mode = Mode::Palette;
+            }
+            Action::Help => self.mode = Mode::Help,
         }
         Ok(())
     }
@@ -261,8 +280,16 @@ impl App {
     }
 
     pub fn list_summary(&self) -> String {
+        let searching = !self.search.is_empty();
         if let Some(tag) = &self.tag_filter {
-            return format!("{} with #{tag}", self.items.len());
+            let mut summary = format!("{} with #{tag}", self.items.len());
+            if searching {
+                summary.push_str(&format!(" · /{}", self.search));
+            }
+            return summary;
+        }
+        if searching {
+            return format!("{} found · /{}", self.items.len(), self.search);
         }
 
         match self.section {
@@ -350,7 +377,12 @@ impl App {
             KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => match self.mode {
                 Mode::ConfirmDelete => self.confirm_delete()?,
                 Mode::ConfirmDiscard => self.discard_editor()?,
-                Mode::Normal | Mode::Edit | Mode::Tags => {}
+                Mode::Normal
+                | Mode::Edit
+                | Mode::Tags
+                | Mode::Search
+                | Mode::Palette
+                | Mode::Help => {}
             },
             KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc | KeyCode::Char('q') => {
                 self.cancel_confirm();
@@ -590,6 +622,7 @@ impl App {
         ItemQuery {
             kind: Some(self.section),
             tag: self.tag_filter.clone(),
+            search: Some(self.search.clone()).filter(|query| !query.trim().is_empty()),
             sort: self.sort,
             ..ItemQuery::default()
         }
@@ -611,6 +644,12 @@ impl App {
     }
 
     fn back(&mut self) -> Result<()> {
+        if !self.search.is_empty() {
+            self.search.clear();
+            self.reload(Select::First)?;
+            self.set_status("Search cleared", Tone::Normal);
+            return Ok(());
+        }
         if self.tag_filter.take().is_some() {
             self.reload(Select::First)?;
             self.set_status("Filter cleared", Tone::Normal);
@@ -651,6 +690,114 @@ impl App {
             None => self.set_status("Filter cleared", Tone::Normal),
         }
         Ok(())
+    }
+
+    fn handle_search_key(&mut self, key: KeyEvent) -> Result<()> {
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            match key.code {
+                KeyCode::Char('c') => self.end_search(true)?,
+                KeyCode::Char('u') => self.edit_search(|search| search.clear())?,
+                _ => {}
+            }
+            return Ok(());
+        }
+
+        match key.code {
+            KeyCode::Esc => self.end_search(true)?,
+            KeyCode::Enter => self.end_search(false)?,
+            KeyCode::Backspace => self.edit_search(|search| {
+                search.pop();
+            })?,
+            KeyCode::Up => self.move_selection(-1),
+            KeyCode::Down => self.move_selection(1),
+            KeyCode::Char(character) => self.edit_search(|search| search.push(character))?,
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Applies an edit to the query and refreshes the results as you type.
+    fn edit_search(&mut self, edit: impl FnOnce(&mut String)) -> Result<()> {
+        edit(&mut self.search);
+        self.list_offset = 0;
+        self.preview_scroll = 0;
+        self.reload(Select::First)
+    }
+
+    fn end_search(&mut self, clear: bool) -> Result<()> {
+        self.mode = Mode::Normal;
+        if clear && !self.search.is_empty() {
+            self.search.clear();
+            self.reload(Select::First)?;
+        }
+        Ok(())
+    }
+
+    fn handle_palette_key(&mut self, key: KeyEvent) -> Result<()> {
+        let Some(palette) = &mut self.palette else {
+            self.mode = Mode::Normal;
+            return Ok(());
+        };
+
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            match key.code {
+                KeyCode::Char('c') | KeyCode::Char('k') => self.close_palette(),
+                KeyCode::Char('u') => palette.clear_query(),
+                _ => {}
+            }
+            return Ok(());
+        }
+
+        match key.code {
+            KeyCode::Esc => self.close_palette(),
+            KeyCode::Up => palette.move_cursor(-1),
+            KeyCode::Down => palette.move_cursor(1),
+            KeyCode::Backspace => palette.pop(),
+            KeyCode::Enter => {
+                let command = palette.current();
+                self.close_palette();
+                if let Some(command) = command {
+                    self.run_command(command)?;
+                }
+            }
+            KeyCode::Char(character) => palette.push(character),
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn close_palette(&mut self) {
+        self.palette = None;
+        self.mode = Mode::Normal;
+    }
+
+    pub fn run_command(&mut self, command: Command) -> Result<()> {
+        match command {
+            Command::New => self.update(Action::New),
+            Command::Edit => self.update(Action::Edit),
+            Command::Delete => self.update(Action::Delete),
+            Command::ToggleDone => self.update(Action::ToggleDone),
+            Command::CyclePriority => self.update(Action::CyclePriority),
+            Command::CycleSort => self.update(Action::CycleSort),
+            Command::Copy => self.update(Action::Copy),
+            Command::TagItem => self.update(Action::PickTags),
+            Command::FilterTag => self.update(Action::FilterTags),
+            Command::Search => self.update(Action::Search),
+            Command::Refresh => self.update(Action::Refresh),
+            Command::Help => self.update(Action::Help),
+            Command::Quit => self.update(Action::Quit),
+            Command::Go(section) => {
+                self.focus = Pane::List;
+                self.change_section(section)
+            }
+            Command::ClearFilters => {
+                self.search.clear();
+                self.tag_filter = None;
+                self.reload(Select::First)?;
+                self.set_status("Filters cleared", Tone::Normal);
+                Ok(())
+            }
+        }
     }
 
     fn toggle_done(&mut self) -> Result<()> {

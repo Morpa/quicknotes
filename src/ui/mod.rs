@@ -17,6 +17,7 @@ use crate::ui::widgets::{display_width, due_label, relative_time, truncate};
 
 pub mod editor;
 pub mod layout;
+pub mod palette;
 pub mod picker;
 pub mod theme;
 pub mod widgets;
@@ -56,6 +57,15 @@ pub fn draw(frame: &mut Frame, app: &App) {
         && app.mode == Mode::Tags
     {
         picker::draw(frame, frame.area(), picker, &app.theme);
+    }
+
+    if let Some(palette) = &app.palette
+        && app.mode == Mode::Palette
+    {
+        palette::draw_palette(frame, frame.area(), palette, &app.theme);
+    }
+    if app.mode == Mode::Help {
+        palette::draw_help(frame, frame.area(), &app.theme);
     }
 
     render_confirm(frame, app);
@@ -234,13 +244,19 @@ fn render_list(frame: &mut Frame, layout: &FrameLayout, app: &App) {
     frame.render_widget(Paragraph::new(header), layout.list_header);
 
     if app.items.is_empty() {
+        let filtered = !app.search.is_empty() || app.tag_filter.is_some();
+        let (empty_title, empty_hint) = if filtered {
+            ("  No matches", "  Press esc to clear the search or filter.")
+        } else {
+            (
+                "  Nothing here yet",
+                "  Items you create will show up in this list.",
+            )
+        };
         let lines = vec![
             Line::default(),
-            Line::from(Span::styled("  Nothing here yet", app.theme.dimmed())),
-            Line::from(Span::styled(
-                "  Items you create will show up in this list.",
-                app.theme.faint(),
-            )),
+            Line::from(Span::styled(empty_title, app.theme.dimmed())),
+            Line::from(Span::styled(empty_hint, app.theme.faint())),
         ];
         frame.render_widget(Paragraph::new(lines), layout.list_rows);
         return;
@@ -509,8 +525,13 @@ fn render_footer(frame: &mut Frame, rect: Rect, app: &App) {
         .min(available);
     let left_width = available.saturating_sub(right_width + 1);
 
+    let left = if app.mode == Mode::Search {
+        search_line(app)
+    } else {
+        hints_line(app)
+    };
     frame.render_widget(
-        Paragraph::new(hints_line(app)),
+        Paragraph::new(left),
         Rect {
             width: left_width as u16,
             ..rect
@@ -550,7 +571,9 @@ fn render_confirm(frame: &mut Frame, app: &App) {
             "y discard · n keep editing",
             app.theme.warning(),
         ),
-        Mode::Normal | Mode::Edit | Mode::Tags => return,
+        Mode::Normal | Mode::Edit | Mode::Tags | Mode::Search | Mode::Palette | Mode::Help => {
+            return;
+        }
     };
 
     let area = frame.area();
@@ -586,6 +609,15 @@ fn render_confirm(frame: &mut Frame, app: &App) {
     frame.render_widget(Paragraph::new(lines), inner);
 }
 
+fn search_line(app: &App) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(" / ", app.theme.accent()),
+        Span::styled(app.search.clone(), app.theme.text()),
+        Span::styled("▏", app.theme.accent()),
+        Span::styled("   enter keep · esc clear", app.theme.faint()),
+    ])
+}
+
 fn hints_line(app: &App) -> Line<'static> {
     let theme = &app.theme;
     let mut pairs: Vec<(&'static str, &'static str)> = match app.focus {
@@ -606,9 +638,10 @@ fn hints_line(app: &App) -> Line<'static> {
             Kind::Note => {}
         }
         pairs.extend([
+            ("/", "search"),
             ("t", "tags"),
             ("s", "sort"),
-            ("del", "delete"),
+            ("?", "help"),
             ("q", "quit"),
         ]);
     }

@@ -5,6 +5,7 @@ pub mod clipboard;
 pub mod config;
 pub mod db;
 pub mod event;
+pub mod fuzzy;
 pub mod highlight;
 pub mod logging;
 pub mod markdown;

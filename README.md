@@ -12,10 +12,13 @@ quicknotes 0.1.0
 
 ## Status
 
-Phase 4 complete: todos can be completed, prioritized and given a due date;
+Phase 5 complete: incremental full-text search, a fuzzy command palette and a
+help overlay on top of phase 4's todos, highlighting and tags.
+
+Phase 4 added: todos can be completed, prioritized and given a due date;
 snippets are syntax-highlighted with the active Kanagawa palette and copied to
 the clipboard; items carry tags, with a picker, chips and a sidebar filter.
-Incremental search and the command palette arrive in phase 5.
+
 
 ## Build and run
 
@@ -49,8 +52,11 @@ cargo build --release
 | `y` | copy the selected item's body to the clipboard |
 | `t` | tag picker for the selected item |
 | `#` | filter the lists by a tag |
+| `/` | search titles and bodies as you type (`Enter` keeps it, `Esc` clears it) |
+| `Ctrl+K`, `:` | command palette (fuzzy matching) |
+| `?` | keyboard help |
 | `r` | reload from the database |
-| `Esc` | clear the tag filter, or quit when there is none |
+| `Esc` | clear the search, then the tag filter, then quit |
 | `q`, `Ctrl+C` | quit |
 
 In the sidebar, `↑` `↓` walk the sections and then the tags; `Enter` on a tag
@@ -91,6 +97,9 @@ terminals stay usable.
 - Overrides: `QUICKNOTES_DB`, `QUICKNOTES_CONFIG`, `QUICKNOTES_LOG` (`debug`, `trace`, …).
 - Logs go to `quicknotes.log` in the data directory — never to the terminal.
 
+Search, section and tag filters combine: with a tag active, `/` only looks
+inside items that carry it, in the current section.
+
 Notes, todos and snippets share one table. Tags are normalized (lowercased,
 leading `#` dropped) and full-text search uses FTS5 with prefix matching.
 
@@ -120,7 +129,7 @@ terminals without truecolor.
 | 2 | TUI shell: event loop, three-pane layout, navigation ✅ |
 | 3 | Create/edit/delete, editor overlay, markdown preview, autosave ✅ |
 | 4 | Todo interactions, snippet highlighting, tags ✅ |
-| 5 | Incremental search and command palette |
+| 5 | Incremental search and command palette ✅ |
 | 6 | `qn doctor`, CLI, markdown export, polish |
 | 7 | Release: release-please, CI, binaries and `install.sh` |
 

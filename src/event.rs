@@ -32,6 +32,9 @@ pub enum Action {
     Copy,
     PickTags,
     FilterTags,
+    Search,
+    Palette,
+    Help,
 }
 
 /// Waits up to `timeout` for a key press. Returns `None` on tick or on events
@@ -53,6 +56,7 @@ pub fn map_key(key: KeyEvent) -> Option<Action> {
     if key.modifiers.contains(KeyModifiers::CONTROL) {
         return match key.code {
             KeyCode::Char('c') => Some(Action::Quit),
+            KeyCode::Char('k') => Some(Action::Palette),
             _ => None,
         };
     }
@@ -66,6 +70,9 @@ pub fn map_key(key: KeyEvent) -> Option<Action> {
         KeyCode::Char('y') => Some(Action::Copy),
         KeyCode::Char('t') => Some(Action::PickTags),
         KeyCode::Char('#') => Some(Action::FilterTags),
+        KeyCode::Char('/') => Some(Action::Search),
+        KeyCode::Char(':') => Some(Action::Palette),
+        KeyCode::Char('?') => Some(Action::Help),
         KeyCode::Char('n') => Some(Action::New),
         KeyCode::Char('e') | KeyCode::Enter => Some(Action::Edit),
         KeyCode::Delete => Some(Action::Delete),
