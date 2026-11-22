@@ -10,7 +10,7 @@
              │ ITEMS                                               ctrl+k / :         command palette               │
              │   n                  new item                       T                  cycle theme (saved to config) │
              │   e / enter          edit                           r                  reload                        │
-             │   del                delete                         ?                  this help                     │
+             │   d / ⌫ / del        delete (asks first)            ?                  this help                     │
              │   u                  undo last delete               q / ctrl+c         quit                          │
              │   space / x          complete todo                                                                   │
              │   p                  todo priority                                                                   │
@@ -21,4 +21,4 @@
              │ press any key to close                                                                               │
              └──────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- ↑↓ move  n new  e edit  / search  s sort  ? help  q quit                                                                      1/2
+ ↑↓ move  n new  e edit  / search  d delete  s sort  ? help  q quit                                                            1/2

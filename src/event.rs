@@ -79,7 +79,7 @@ pub fn map_key(key: KeyEvent) -> Option<Action> {
         KeyCode::Char('?') => Some(Action::Help),
         KeyCode::Char('n') => Some(Action::New),
         KeyCode::Char('e') | KeyCode::Enter => Some(Action::Edit),
-        KeyCode::Delete => Some(Action::Delete),
+        KeyCode::Delete | KeyCode::Backspace | KeyCode::Char('d') => Some(Action::Delete),
         KeyCode::Tab => Some(Action::NextSection),
         KeyCode::BackTab => Some(Action::PrevSection),
         KeyCode::Up => Some(Action::Up),

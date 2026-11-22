@@ -83,7 +83,7 @@ impl Command {
         match self {
             Self::New => "n",
             Self::Edit => "e",
-            Self::Delete => "del",
+            Self::Delete => "d",
             Self::ToggleDone => "space",
             Self::CyclePriority => "p",
             Self::CycleSort => "s",
@@ -339,7 +339,7 @@ const HELP_LEFT: &[HelpSection] = &[
         &[
             ("n", "new item"),
             ("e / enter", "edit"),
-            ("del", "delete"),
+            ("d / ⌫ / del", "delete (asks first)"),
             ("u", "undo last delete"),
             ("space / x", "complete todo"),
             ("p", "todo priority"),

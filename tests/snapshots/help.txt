@@ -9,7 +9,7 @@
                    │ ITEMS                                                      │
                    │   n                  new item                              │
                    │   e / enter          edit                                  │
-                   │   del                delete                                │
+                   │   d / ⌫ / del        delete (asks first)                   │
                    │   u                  undo last delete                      │
                    │   space / x          complete todo                         │
                    │   p                  todo priority                         │
@@ -27,4 +27,4 @@
                    │   T                  cycle theme (saved to config)         │
                    │ ↑↓ scroll · any other key closes                           │
 ───────────────────└────────────────────────────────────────────────────────────┘───────────────────
- ↑↓ move  n new  e edit  / search  s sort  ? help  q quit                                        1/2
+ ↑↓ move  n new  e edit  / search  d delete  s sort  ? help  q quit                              1/2

@@ -291,3 +291,16 @@ fn help_scrolls_on_narrow_terminals_and_closes_on_other_keys() {
     press(&mut app, KeyCode::Char('?'));
     assert_eq!(app.help_scroll, 0);
 }
+
+#[test]
+fn d_and_backspace_also_ask_to_delete() {
+    use quicknotes::app::Mode;
+
+    for key in [KeyCode::Char('d'), KeyCode::Backspace, KeyCode::Delete] {
+        let mut app = notes_app();
+        press(&mut app, key);
+        assert_eq!(app.mode, Mode::ConfirmDelete, "{key:?}");
+        press(&mut app, KeyCode::Char('y'));
+        assert_eq!(app.items.len(), 1, "{key:?}");
+    }
+}

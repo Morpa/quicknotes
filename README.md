@@ -9,7 +9,7 @@ network. One `qn` binary, one SQLite file, Kanagawa colors.
   SNIPPETS        1 │▎   Groceries                        now│ ────────────────────────────────────
                     │    Async runtime                    now│ milk, eggs
 ────────────────────────────────────────────────────────────────────────────────────────────────────
- ↑↓ move  n new  e edit  / search  s sort  ? help  q quit                                        1/2
+ ↑↓ move  n new  e edit  / search  d delete  s sort  ? help  q quit                                        1/2
 ```
 
 <details>
@@ -24,7 +24,7 @@ Todos with priority and completed items:
                     │    [ ] Review PR                    now│ (no content yet)
                     │    [x] Ship phase 4                 now│
 ────────────────────────────────────────────────────────────────────────────────────────────────────
- ↑↓ move  n new  e edit  space done  / search  s sort  ? help  q quit                            1/3
+ ↑↓ move  n new  e edit  space done  / search  d delete  s sort  ? help  q quit                            1/3
 ```
 
 Snippet preview (syntax colors are not visible in plain text):
@@ -36,7 +36,7 @@ Snippet preview (syntax colors are not visible in plain text):
                     │                                        │ let count = map.entry(key).or_insert
                     │                                        │ *count += 1;
 ────────────────────────────────────────────────────────────────────────────────────────────────────
- ↑↓ move  n new  e edit  y copy  / search  s sort  ? help  q quit                                1/1
+ ↑↓ move  n new  e edit  y copy  / search  d delete  s sort  ? help  q quit                                1/1
 ```
 
 Command palette:
@@ -56,7 +56,7 @@ Command palette:
                     │  │ enter run  esc close                               │
                     │  └────────────────────────────────────────────────────┘
 ────────────────────────────────────────────────────────────────────────────────────────────────────
- ↑↓ move  n new  e edit  / search  s sort  ? help  q quit                                        1/2
+ ↑↓ move  n new  e edit  / search  d delete  s sort  ? help  q quit                                        1/2
 ```
 
 </details>
@@ -98,7 +98,7 @@ is the reference); with any other font use `icons = "ascii"`.
 | `PageUp` / `PageDown` | jump a page |
 | `Enter`, `e` | edit the selected item |
 | `n` | new item in the active section |
-| `Delete` | delete the selected item (asks for confirmation) |
+| `d`, `Backspace`, `Delete` | delete the selected item (asks for confirmation; `u` undoes it) |
 | `Space`, `x` | complete / reopen the selected todo |
 | `p` | cycle the todo priority (none → medium → high) |
 | `s` | cycle the sort order (smart, updated, created, title, due, priority) |

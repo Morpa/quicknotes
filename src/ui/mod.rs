@@ -576,7 +576,13 @@ fn hints_line(app: &App) -> Line<'static> {
             Kind::Snippet => pairs.push(("y", "copy")),
             Kind::Note => {}
         }
-        pairs.extend([("/", "search"), ("s", "sort"), ("?", "help"), ("q", "quit")]);
+        pairs.extend([
+            ("/", "search"),
+            ("d", "delete"),
+            ("s", "sort"),
+            ("?", "help"),
+            ("q", "quit"),
+        ]);
     }
 
     let mut spans = vec![Span::raw(" ")];

@@ -21,4 +21,4 @@
   │                                                                                              │
   │ ctrl+s save  tab next field  ctrl+p preview  esc cancel                                 saved│
 ──└──────────────────────────────────────────────────────────────────────────────────────────────┘──
- ↑↓ move  n new  e edit  space done  / search  s sort  ? help  q quit                            1/3
+ ↑↓ move  n new  e edit  space done  / search  d delete  s sort  ? help  q quit                  1/3
