@@ -95,26 +95,11 @@ cargo build --release
 ./target/release/qn
 ```
 
-Prebuilt binaries and an install script arrive in phase 7. Run `qn doctor`
-after installing to check the terminal, the database and the clipboard.
+Prebuilt binaries and an install script arrive in phase 7. `qn` takes no
+arguments: it opens the interface (or prints a one-screen summary when piped).
 
 For the icons, set your terminal font to a Nerd Font (Iosevka Nerd Font Propo
 is the reference); with any other font use `icons = "ascii"`.
-
-## Command line
-
-| Command | What it does |
-|---|---|
-| `qn` | open the interface (prints a one-screen summary when piped) |
-| `qn doctor` | check config, database, search index, terminal, font hint and clipboard; exits 1 when something is broken |
-| `qn setup` | write the commented `config.toml` if it does not exist |
-| `qn setup --print-config` | print the default configuration to stdout |
-| `qn export [DIR \| -]` | write every item as Markdown with YAML frontmatter (`DIR` defaults to `quicknotes-export`, `-` prints to stdout) |
-| `qn export --kind todo --tag work` | export only one kind and/or one tag |
-
-Exported files are named `<kind>-<id>-<title-slug>.md`. Snippets are wrapped in
-a fenced code block tagged with their language; todos carry `done`, `due` and
-`priority` in the frontmatter.
 
 ## Keys
 
@@ -131,12 +116,16 @@ a fenced code block tagged with their language; todos carry `done`, `due` and
 | `Space`, `x` | complete / reopen the selected todo |
 | `p` | cycle the todo priority (none → medium → high) |
 | `s` | cycle the sort order (smart, updated, created, title, due, priority) |
+| `*` | pin / unpin the selected item (pinned items sort first) |
+| `u` | undo the last delete (up to 20, newest first) |
 | `y` | copy the selected item's body to the clipboard |
+| `E` | edit the body in `$VISUAL` / `$EDITOR` (falls back to `vi`) |
+| `T` | cycle the theme Wave → Dragon → Lotus and save it to `config.toml` |
 | `t` | tag picker for the selected item |
 | `#` | filter the lists by a tag |
 | `/` | search titles and bodies as you type (`Enter` keeps it, `Esc` clears it) |
 | `Ctrl+K`, `:` | command palette (fuzzy matching) |
-| `?` | keyboard help |
+| `?` | keyboard help (two columns on wide terminals, scrollable on narrow ones) |
 | `r` | reload from the database |
 | `Esc` | clear the search, then the tag filter, then quit |
 | `q`, `Ctrl+C` | quit |
@@ -144,6 +133,13 @@ a fenced code block tagged with their language; todos carry `done`, `due` and
 In the sidebar, `↑` `↓` walk the sections and then the tags; `Enter` on a tag
 turns its filter on or off. In the tag picker, type to search, `Space` toggles
 a tag on the item (a new name offers to create it) and `Esc` closes it.
+
+`E` suspends the interface, opens a temporary file (`.md`, or the snippet's
+language extension so your editor picks a syntax) and applies the result when
+the editor exits. An editor that returns immediately, such as `code` without
+`--wait`, needs its blocking flag: `EDITOR="code --wait"`. Arguments are split
+on spaces; shell quoting is not supported. Nothing changes if the editor fails
+or the text is the same.
 
 Inside the editor:
 
@@ -187,7 +183,7 @@ leading `#` dropped) and full-text search uses FTS5 with prefix matching.
 
 ## Configuration
 
-`config.toml` is written with comments on first run (or by `qn setup`):
+`config.toml` is written with comments on first run:
 
 ```toml
 theme       = "kanagawa-wave"   # kanagawa-wave | kanagawa-dragon | kanagawa-lotus | auto
@@ -201,8 +197,9 @@ color_mode  = "truecolor"       # truecolor | 256
 
 `theme = "auto"` asks the terminal for its background color (OSC 11, then
 `COLORFGBG`) and picks Wave for dark terminals or Lotus for light ones; Wave is
-used when the terminal does not answer. `T` cycles Wave → Dragon → Lotus for the
-current session.
+used when the terminal does not answer. `T` cycles Wave → Dragon → Lotus and
+rewrites only the `theme` line of `config.toml`, keeping your comments; it
+replaces `auto` with the variant you land on.
 
 `background = "terminal"` uses `Color::Reset`, so quicknotes blends with your
 terminal's own Kanagawa colors. `color_mode = "256"` quantizes the palette for
@@ -225,5 +222,6 @@ cargo fmt --all --check
 | 3 | Create/edit/delete, editor overlay, markdown preview, autosave ✅ |
 | 4 | Todo interactions, snippet highlighting, tags ✅ |
 | 5 | Incremental search and command palette ✅ |
-| 6 | `qn doctor`, `setup`, `export`, themes, snapshots, polish ✅ |
+| 6 | Auto theme, UI snapshots, polish ✅ |
+| – | Pin, undo delete, `$EDITOR`, saved theme ✅ |
 | 7 | Release: release-please, CI, binaries and `install.sh` |

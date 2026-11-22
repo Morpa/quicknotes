@@ -2,6 +2,8 @@
 
 use std::time::{Duration, Instant};
 
+use std::path::PathBuf;
+
 use anyhow::Result;
 use chrono::{Local, NaiveDate};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -12,10 +14,11 @@ use crate::clipboard;
 use crate::config::{Config, Icons};
 use crate::db::{Database, Item, ItemQuery, Kind, NewItem, SortOrder, Stats, normalize_tag};
 use crate::event::{self, Action};
+use crate::external;
 use crate::markdown;
 use crate::ui::editor::{Editor, Field, PRIORITY_LABELS, parse_due};
 use crate::ui::layout::{self, Visibility};
-use crate::ui::palette::{Command, Palette};
+use crate::ui::palette::{self, Command, Palette};
 use crate::ui::picker::{RowKind, TagPicker, TagPurpose};
 use crate::ui::theme::Theme;
 
@@ -25,6 +28,8 @@ pub const AUTOSAVE_DELAY: Duration = Duration::from_millis(1_200);
 /// Sink for text copied from an item; the system clipboard unless replaced.
 pub type CopyFn = Box<dyn FnMut(&str) -> Result<()>>;
 
+/// Deleted items kept for undo.
+pub const UNDO_LIMIT: usize = 20;
 /// Tags listed in the sidebar; the rest are reachable through the picker.
 pub const SIDEBAR_TAGS: usize = 8;
 
@@ -79,6 +84,16 @@ pub struct PendingDelete {
     pub title: String,
 }
 
+/// A request to edit an item's body outside the TUI; the terminal loop owns
+/// the actual suspend, spawn and resume.
+#[derive(Debug, Clone)]
+pub struct ExternalEdit {
+    pub id: i64,
+    pub title: String,
+    pub body: String,
+    pub suffix: String,
+}
+
 #[derive(Debug, Clone, Copy)]
 enum Select {
     Keep,
@@ -119,6 +134,13 @@ pub struct App {
     /// Full-text query applied to the lists; empty means no search.
     pub search: String,
     pub palette: Option<Palette>,
+    /// First visible line of the help overlay on narrow terminals.
+    pub help_scroll: usize,
+    /// Where `T` saves the chosen theme; `None` keeps it per session.
+    pub config_path: Option<PathBuf>,
+    /// Most recently deleted items, newest last.
+    pub deleted: Vec<Item>,
+    external_edit: Option<ExternalEdit>,
     /// Writes text to the system clipboard; replaced in tests.
     pub clipboard: CopyFn,
 }
@@ -162,6 +184,10 @@ impl App {
             tag_picker: None,
             search: String::new(),
             palette: None,
+            help_scroll: 0,
+            config_path: None,
+            deleted: Vec::new(),
+            external_edit: None,
             clipboard: Box::new(clipboard::copy),
         };
         app.ensure_visible();
@@ -181,7 +207,17 @@ impl App {
             Mode::Tags => self.handle_picker_key(key)?,
             Mode::Search => self.handle_search_key(key)?,
             Mode::Palette => self.handle_palette_key(key)?,
-            Mode::Help => self.mode = Mode::Normal,
+            Mode::Help => match key.code {
+                KeyCode::Up => self.help_scroll = self.help_scroll.saturating_sub(1),
+                KeyCode::Down => {
+                    self.help_scroll = (self.help_scroll + 1).min(palette::help_height());
+                }
+                KeyCode::PageUp => self.help_scroll = self.help_scroll.saturating_sub(8),
+                KeyCode::PageDown => {
+                    self.help_scroll = (self.help_scroll + 8).min(palette::help_height());
+                }
+                _ => self.mode = Mode::Normal,
+            },
         }
         Ok(())
     }
@@ -215,6 +251,9 @@ impl App {
             Action::CycleSort => self.cycle_sort()?,
             Action::Copy => self.copy_selected(),
             Action::CycleTheme => self.cycle_theme(),
+            Action::TogglePin => self.toggle_pin()?,
+            Action::Undo => self.undo_delete()?,
+            Action::ExternalEdit => self.request_external_edit(),
             Action::PickTags => self.open_tag_picker(false),
             Action::FilterTags => self.open_tag_picker(true),
             Action::Search => self.mode = Mode::Search,
@@ -222,7 +261,10 @@ impl App {
                 self.palette = Some(Palette::new());
                 self.mode = Mode::Palette;
             }
-            Action::Help => self.mode = Mode::Help,
+            Action::Help => {
+                self.help_scroll = 0;
+                self.mode = Mode::Help;
+            }
         }
         Ok(())
     }
@@ -434,12 +476,22 @@ impl App {
             return Ok(());
         };
 
+        let snapshot = self.db.get_item(pending.id)?;
         let deleted = self.db.delete_item(pending.id)?;
+        if deleted && let Some(item) = snapshot {
+            self.deleted.push(item);
+            if self.deleted.len() > UNDO_LIMIT {
+                self.deleted.remove(0);
+            }
+        }
         self.mode = Mode::Normal;
         self.reload(Select::Keep)?;
 
         if deleted {
-            self.set_status(format!("Deleted · {}", pending.title), Tone::Success);
+            self.set_status(
+                format!("Deleted · {} · u to undo", pending.title),
+                Tone::Success,
+            );
         }
         Ok(())
     }
@@ -781,6 +833,9 @@ impl App {
             Command::CyclePriority => self.update(Action::CyclePriority),
             Command::CycleSort => self.update(Action::CycleSort),
             Command::CycleTheme => self.update(Action::CycleTheme),
+            Command::TogglePin => self.update(Action::TogglePin),
+            Command::Undo => self.update(Action::Undo),
+            Command::ExternalEdit => self.update(Action::ExternalEdit),
             Command::Copy => self.update(Action::Copy),
             Command::TagItem => self.update(Action::PickTags),
             Command::FilterTag => self.update(Action::FilterTags),
@@ -863,7 +918,114 @@ impl App {
         self.config.theme = self.theme.name.next();
         self.theme = Theme::from_config(&self.config);
         self.refresh_preview_bounds();
-        self.set_status(format!("Theme · {}", self.theme.name), Tone::Normal);
+
+        let name = self.theme.name;
+        match &self.config_path {
+            None => self.set_status(format!("Theme · {name} · this session"), Tone::Normal),
+            Some(path) => match Config::save_theme(path, self.config.theme) {
+                Ok(()) => self.set_status(format!("Theme · {name} · saved"), Tone::Success),
+                Err(error) => {
+                    tracing::warn!(error = %format!("{error:#}"), "could not save the theme");
+                    self.set_status(
+                        format!("Theme · {name} · could not save to config.toml"),
+                        Tone::Warning,
+                    );
+                }
+            },
+        }
+    }
+
+    fn toggle_pin(&mut self) -> Result<()> {
+        let Some(item) = self.selected_item() else {
+            self.set_status("Nothing selected", Tone::Warning);
+            return Ok(());
+        };
+
+        let (id, title, pinned) = (item.id, item.title.clone(), !item.pinned);
+        self.db.set_pinned(id, pinned)?;
+        self.reload(Select::Id(id))?;
+
+        let verb = if pinned { "Pinned" } else { "Unpinned" };
+        self.set_status(format!("{verb} · {title}"), Tone::Success);
+        Ok(())
+    }
+
+    fn undo_delete(&mut self) -> Result<()> {
+        let Some(item) = self.deleted.pop() else {
+            self.set_status("Nothing to undo", Tone::Warning);
+            return Ok(());
+        };
+
+        match self.db.restore_item(&item) {
+            Ok(restored) => {
+                // Show the item again: switch to its section if needed.
+                self.change_section(restored.kind)?;
+                self.reload(Select::Id(restored.id))?;
+                self.set_status(format!("Restored · {}", restored.title), Tone::Success);
+            }
+            Err(error) => {
+                tracing::warn!(error = %format!("{error:#}"), "undo failed");
+                self.set_status("Could not restore the item", Tone::Danger);
+            }
+        }
+        Ok(())
+    }
+
+    fn request_external_edit(&mut self) {
+        let Some(item) = self.selected_item() else {
+            self.set_status("Nothing selected", Tone::Warning);
+            return;
+        };
+
+        self.external_edit = Some(ExternalEdit {
+            id: item.id,
+            title: item.title.clone(),
+            body: item.body.clone(),
+            suffix: external::extension(item.kind, item.language.as_deref()),
+        });
+    }
+
+    /// Hands the pending external edit to the terminal loop, once.
+    pub fn take_external_edit(&mut self) -> Option<ExternalEdit> {
+        self.external_edit.take()
+    }
+
+    /// Applies the outcome of an external edit: the new text, or the reason
+    /// the editor could not run.
+    pub fn finish_external_edit(
+        &mut self,
+        request: &ExternalEdit,
+        outcome: Result<String>,
+    ) -> Result<()> {
+        let text = match outcome {
+            Ok(text) => text,
+            Err(error) => {
+                tracing::warn!(error = %format!("{error:#}"), "external editor failed");
+                self.set_status(format!("Editor failed: {error:#}"), Tone::Danger);
+                return Ok(());
+            }
+        };
+
+        // Editors add a final newline; do not store one the body never had.
+        let body = if request.body.ends_with('\n') {
+            text
+        } else {
+            text.trim_end_matches(['\n', '\r']).to_string()
+        };
+        if body == request.body {
+            self.set_status("No changes", Tone::Normal);
+            return Ok(());
+        }
+
+        let Some(mut item) = self.db.get_item(request.id)? else {
+            self.set_status("The item was deleted meanwhile", Tone::Warning);
+            return Ok(());
+        };
+        item.body = body;
+        self.db.update_item(&item)?;
+        self.reload(Select::Id(request.id))?;
+        self.set_status(format!("Updated · {}", request.title), Tone::Success);
+        Ok(())
     }
 
     fn copy_selected(&mut self) {

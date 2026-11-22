@@ -16,6 +16,7 @@ use ratatui::layout::Rect;
 
 use crate::app::App;
 use crate::event;
+use crate::external;
 use crate::ui;
 
 const TICK: Duration = Duration::from_millis(200);
@@ -50,9 +51,31 @@ fn run_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut App) ->
         } else {
             app.tick();
         }
+
+        if let Some(request) = app.take_external_edit() {
+            let outcome = run_external_editor(terminal, &request.body, &request.suffix);
+            app.finish_external_edit(&request, outcome)?;
+        }
     }
 
     Ok(())
+}
+
+/// Gives the terminal to the user's editor and takes it back afterwards. The
+/// terminal is restored even when the editor fails to start.
+fn run_external_editor(
+    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+    body: &str,
+    suffix: &str,
+) -> Result<String> {
+    restore_terminal(terminal)?;
+    let outcome = external::edit_text(&external::editor_command(), body, suffix);
+
+    enable_raw_mode().context("enabling raw mode")?;
+    execute!(terminal.backend_mut(), EnterAlternateScreen, cursor::Hide)
+        .context("entering the alternate screen")?;
+    terminal.clear().context("redrawing after the editor")?;
+    outcome
 }
 
 fn init_terminal() -> Result<Terminal<CrosstermBackend<Stdout>>> {

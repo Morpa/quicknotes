@@ -1,13 +1,11 @@
 //! quicknotes — local-first notes, todos and code snippets for the terminal.
 
 pub mod app;
-pub mod cli;
 pub mod clipboard;
 pub mod config;
 pub mod db;
-pub mod doctor;
 pub mod event;
-pub mod export;
+pub mod external;
 pub mod fuzzy;
 pub mod highlight;
 pub mod logging;

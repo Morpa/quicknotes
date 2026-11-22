@@ -246,6 +246,40 @@ impl Config {
         Ok(true)
     }
 
+    /// Writes `theme = "..."` into the file at `path`, leaving every other
+    /// line and comment alone. Creates the file when it does not exist.
+    pub fn save_theme(path: &Path, theme: ThemeName) -> Result<()> {
+        if !path.exists() {
+            let config = Self {
+                theme,
+                ..Self::default()
+            };
+            if let Some(parent) = path
+                .parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+            {
+                std::fs::create_dir_all(parent)
+                    .with_context(|| format!("creating {}", parent.display()))?;
+            }
+            return std::fs::write(path, config.to_toml()?)
+                .with_context(|| format!("writing configuration {}", path.display()));
+        }
+
+        let text = std::fs::read_to_string(path)
+            .with_context(|| format!("reading configuration {}", path.display()))?;
+        let updated = replace_theme(&text, theme);
+        if updated == text {
+            return Ok(());
+        }
+
+        // Write next to the target and rename, so a crash never leaves a
+        // half-written configuration behind.
+        let temporary = path.with_extension("toml.tmp");
+        std::fs::write(&temporary, updated)
+            .with_context(|| format!("writing {}", temporary.display()))?;
+        std::fs::rename(&temporary, path).with_context(|| format!("replacing {}", path.display()))
+    }
+
     /// Replaces `theme = "auto"` with Lotus (light terminal) or Wave (dark).
     /// Other themes are left alone.
     pub fn resolve_auto(mut self, dark_terminal: Option<bool>) -> Self {
@@ -264,9 +298,92 @@ impl Config {
     }
 }
 
+/// Swaps the value of the top-level `theme` key, keeping an inline comment.
+/// Appends the key when the text has none.
+fn replace_theme(text: &str, theme: ThemeName) -> String {
+    let mut found = false;
+    let mut in_table = false;
+    let mut lines: Vec<String> = text
+        .lines()
+        .map(|line| {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with('[') {
+                in_table = true;
+            }
+
+            let is_theme_key = !in_table
+                && !found
+                && trimmed
+                    .strip_prefix("theme")
+                    .is_some_and(|rest| rest.trim_start().starts_with('='));
+            if !is_theme_key {
+                return line.to_string();
+            }
+
+            found = true;
+            let comment = line
+                .split_once('#')
+                .map(|(_, comment)| format!("  #{comment}"))
+                .unwrap_or_default();
+            format!("theme = \"{}\"{comment}", theme.as_str())
+        })
+        .collect();
+
+    if !found {
+        // A top-level key must come before the first table.
+        let position = lines
+            .iter()
+            .position(|line| line.trim_start().starts_with('['))
+            .unwrap_or(lines.len());
+        lines.insert(position, format!("theme = \"{}\"", theme.as_str()));
+    }
+
+    let mut out = lines.join("\n");
+    out.push('\n');
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn replaces_the_theme_and_keeps_comments() {
+        let text = "# my notes\ntheme       = \"kanagawa-wave\"   # pick one\nicons = \"nerd\"\n";
+        let updated = replace_theme(text, ThemeName::Lotus);
+
+        assert_eq!(
+            updated,
+            "# my notes\ntheme = \"kanagawa-lotus\"  # pick one\nicons = \"nerd\"\n"
+        );
+    }
+
+    #[test]
+    fn ignores_commented_theme_lines_and_tables() {
+        let text = "# theme = \"kanagawa-wave\"\nicons = \"nerd\"\n[other]\ntheme = \"x\"\n";
+        let updated = replace_theme(text, ThemeName::Dragon);
+
+        assert!(updated.contains("# theme = \"kanagawa-wave\""));
+        assert!(updated.contains("[other]\ntheme = \"x\""));
+        assert!(updated.starts_with(
+            "# theme = \"kanagawa-wave\"\nicons = \"nerd\"\ntheme = \"kanagawa-dragon\"\n[other]"
+        ));
+    }
+
+    #[test]
+    fn saves_into_existing_and_missing_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sub").join("config.toml");
+
+        Config::save_theme(&path, ThemeName::Dragon).unwrap();
+        assert_eq!(Config::load_from(&path).unwrap().theme, ThemeName::Dragon);
+
+        Config::save_theme(&path, ThemeName::Lotus).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("# theme:"), "comments survive");
+        assert_eq!(Config::load_from(&path).unwrap().theme, ThemeName::Lotus);
+        assert!(!path.with_extension("toml.tmp").exists());
+    }
 
     #[test]
     fn default_config_roundtrips() {

@@ -312,3 +312,40 @@ fn sort_orders_and_priority_updates() {
 
     assert_eq!(SortOrder::Priority.next(), SortOrder::Smart);
 }
+
+#[test]
+fn restore_brings_back_a_deleted_item_unchanged() {
+    let mut db = memory_db();
+    let original = db
+        .insert_item(
+            &NewItem::todo("Pagar luz")
+                .body("conta")
+                .priority(2)
+                .due(date(2026, 12, 1))
+                .tags(["casa", "contas"]),
+        )
+        .unwrap();
+    db.set_pinned(original.id, true).unwrap();
+    db.set_done(original.id, true).unwrap();
+    let original = db.get_item(original.id).unwrap().unwrap();
+
+    assert!(db.delete_item(original.id).unwrap());
+    assert!(db.get_item(original.id).unwrap().is_none());
+    assert!(db.all_tags().unwrap().is_empty());
+
+    let restored = db.restore_item(&original).unwrap();
+
+    assert_eq!(restored, original);
+    assert_eq!(db.all_tags().unwrap().len(), 2);
+    // The search index follows the restore.
+    let found = db
+        .list_items(&ItemQuery {
+            search: Some("conta".into()),
+            ..ItemQuery::default()
+        })
+        .unwrap();
+    assert_eq!(found.len(), 1);
+
+    // Restoring over a live row is an error, not a duplicate.
+    assert!(db.restore_item(&original).is_err());
+}

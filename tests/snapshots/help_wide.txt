@@ -1,0 +1,24 @@
+ QUICKNOTES
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+▎ NOTES      ┌ HELP ────────────────────────────────────────────────────────────────────────────────────────────────┐
+  TODOS      │ NAVIGATE                                          FIND                                               │
+  SNIPPETS   │   ↑ ↓                move / scroll preview          /                  search (enter keeps)          │────────────
+             │   ← →                switch pane                    t / #              tag item / filter by tag      │
+ TAGS        │   tab / shift+tab    next / previous section        s                  sort order                    │
+  #async     │   home end pgup pgdn jump                           esc                clear search, tag, then quit  │
+  #docs      │                                                                                                      │
+  #home      │ ITEMS                                             OTHER                                              │
+  #rust      │   n                  new item                       ctrl+k / :         command palette               │
+             │   e / enter          edit                           T                  cycle theme (saved to config) │
+             │   del                delete                         r                  reload                        │
+             │   u                  undo last delete               ?                  this help                     │
+             │   space / x          complete todo                  q / ctrl+c         quit                          │
+             │   p                  todo priority                                                                   │
+             │   *                  pin / unpin                                                                     │
+             │   y                  copy body                                                                       │
+             │   E                  edit body in $EDITOR                                                            │
+             │                                                                                                      │
+             │ press any key to close                                                                               │
+             └──────────────────────────────────────────────────────────────────────────────────────────────────────┘
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ↑↓ move  n new  e edit  / search  t tags  s sort  ? help  q quit                                                              1/2

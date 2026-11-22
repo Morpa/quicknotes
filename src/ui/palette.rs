@@ -20,6 +20,9 @@ pub enum Command {
     CyclePriority,
     CycleSort,
     CycleTheme,
+    TogglePin,
+    Undo,
+    ExternalEdit,
     Copy,
     TagItem,
     FilterTag,
@@ -32,7 +35,7 @@ pub enum Command {
 }
 
 impl Command {
-    pub const ALL: [Command; 18] = [
+    pub const ALL: [Command; 21] = [
         Self::New,
         Self::Edit,
         Self::Delete,
@@ -40,6 +43,9 @@ impl Command {
         Self::CyclePriority,
         Self::CycleSort,
         Self::CycleTheme,
+        Self::TogglePin,
+        Self::Undo,
+        Self::ExternalEdit,
         Self::Copy,
         Self::TagItem,
         Self::FilterTag,
@@ -62,6 +68,9 @@ impl Command {
             Self::CyclePriority => "Cycle todo priority",
             Self::CycleSort => "Cycle sort order",
             Self::CycleTheme => "Cycle theme (wave, dragon, lotus)",
+            Self::TogglePin => "Pin / unpin item",
+            Self::Undo => "Undo last delete",
+            Self::ExternalEdit => "Edit body in $EDITOR",
             Self::Copy => "Copy body to clipboard",
             Self::TagItem => "Tag item…",
             Self::FilterTag => "Filter by tag…",
@@ -85,6 +94,9 @@ impl Command {
             Self::CyclePriority => "p",
             Self::CycleSort => "s",
             Self::CycleTheme => "T",
+            Self::TogglePin => "*",
+            Self::Undo => "u",
+            Self::ExternalEdit => "E",
             Self::Copy => "y",
             Self::TagItem => "t",
             Self::FilterTag => "#",
@@ -318,7 +330,9 @@ fn command_line(
     Line::from(spans)
 }
 
-const HELP: &[(&str, &[(&str, &str)])] = &[
+type HelpSection = (&'static str, &'static [(&'static str, &'static str)]);
+
+const HELP_LEFT: &[HelpSection] = &[
     (
         "NAVIGATE",
         &[
@@ -334,54 +348,132 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
             ("n", "new item"),
             ("e / enter", "edit"),
             ("del", "delete"),
+            ("u", "undo last delete"),
             ("space / x", "complete todo"),
             ("p", "todo priority"),
+            ("*", "pin / unpin"),
             ("y", "copy body"),
+            ("E", "edit body in $EDITOR"),
         ],
     ),
+];
+
+const HELP_RIGHT: &[HelpSection] = &[
     (
         "FIND",
         &[
-            ("/", "search (enter keeps it, esc clears)"),
+            ("/", "search (enter keeps)"),
             ("t / #", "tag item / filter by tag"),
             ("s", "sort order"),
-            ("T", "cycle theme (this session)"),
-            ("ctrl+k / :", "command palette"),
-            ("esc", "clear search, then tag filter, then quit"),
+            ("esc", "clear search, tag, then quit"),
         ],
     ),
     (
         "OTHER",
-        &[("r", "reload"), ("?", "this help"), ("q / ctrl+c", "quit")],
+        &[
+            ("ctrl+k / :", "command palette"),
+            ("T", "cycle theme (saved to config)"),
+            ("r", "reload"),
+            ("?", "this help"),
+            ("q / ctrl+c", "quit"),
+        ],
     ),
 ];
 
-pub fn draw_help(frame: &mut Frame, area: Rect, theme: &Theme) {
-    let rows: usize = HELP.iter().map(|(_, items)| items.len() + 2).sum();
-    let Some(rect) = popup(area, 62, rows as u16 + 3) else {
-        return;
-    };
-    let inner = framed(frame, rect, "HELP", theme);
-    if inner.width == 0 || inner.height < 2 {
-        return;
-    }
+/// Width from which the help is split into two columns.
+const HELP_TWO_COLUMNS: u16 = 112;
 
+fn help_lines(sections: &[HelpSection], theme: &Theme) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
-    for (section, items) in HELP {
+    for (index, (section, items)) in sections.iter().enumerate() {
+        if index > 0 {
+            lines.push(Line::default());
+        }
         lines.push(Line::from(Span::styled(*section, theme.label())));
         for (key, label) in *items {
             lines.push(Line::from(vec![
-                Span::styled(format!("  {key:<20}"), theme.accent()),
+                Span::styled(format!("  {key:<19}"), theme.accent()),
                 Span::styled(*label, theme.dimmed()),
             ]));
         }
-        lines.push(Line::default());
     }
-    lines.push(Line::from(Span::styled(
-        "press any key to close",
-        theme.faint(),
-    )));
-    frame.render_widget(Paragraph::new(lines), inner);
+    lines
+}
+
+/// Number of lines the single-column help needs; bounds the scroll.
+pub fn help_height() -> usize {
+    let both: Vec<HelpSection> = HELP_LEFT.iter().chain(HELP_RIGHT).copied().collect();
+    both.iter().map(|(_, items)| items.len() + 2).sum::<usize>() - 1
+}
+
+pub fn draw_help(frame: &mut Frame, area: Rect, theme: &Theme, scroll: usize) {
+    let two_columns = area.width >= HELP_TWO_COLUMNS;
+    let left = help_lines(HELP_LEFT, theme);
+    let right = help_lines(HELP_RIGHT, theme);
+
+    let (width, rows) = if two_columns {
+        (104, left.len().max(right.len()))
+    } else {
+        (62, help_height())
+    };
+    let Some(rect) = popup(area, width, rows as u16 + 4) else {
+        return;
+    };
+    let inner = framed(frame, rect, "HELP", theme);
+    if inner.width == 0 || inner.height < 3 {
+        return;
+    }
+
+    let body = Rect {
+        height: inner.height - 1,
+        ..inner
+    };
+    if two_columns {
+        let half = body.width / 2;
+        let columns = [
+            (
+                left,
+                Rect {
+                    width: half,
+                    ..body
+                },
+            ),
+            (
+                right,
+                Rect {
+                    x: body.x + half,
+                    width: body.width - half,
+                    ..body
+                },
+            ),
+        ];
+        for (lines, rect) in columns {
+            frame.render_widget(Paragraph::new(lines), rect);
+        }
+    } else {
+        let mut lines = left;
+        lines.push(Line::default());
+        lines.extend(right);
+        let scroll = scroll.min(lines.len().saturating_sub(usize::from(body.height)));
+        frame.render_widget(
+            Paragraph::new(lines).scroll((scroll.min(u16::MAX as usize) as u16, 0)),
+            body,
+        );
+    }
+
+    let footer = if two_columns {
+        "press any key to close"
+    } else {
+        "↑↓ scroll · any other key closes"
+    };
+    frame.render_widget(
+        Paragraph::new(Span::styled(footer, theme.faint())),
+        Rect {
+            y: inner.y + inner.height - 1,
+            height: 1,
+            ..inner
+        },
+    );
 }
 
 #[cfg(test)]

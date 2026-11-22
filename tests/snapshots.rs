@@ -163,6 +163,13 @@ fn help_overlay() {
 }
 
 #[test]
+fn help_overlay_in_two_columns() {
+    let mut app = app(130, 24);
+    press(&mut app, KeyCode::Char('?'));
+    assert_snapshot("help_wide", &screen(&app, 130, 24));
+}
+
+#[test]
 fn narrow_terminal_shows_only_the_list() {
     let app = app(44, 16);
     assert_snapshot("narrow", &screen(&app, 44, 16));

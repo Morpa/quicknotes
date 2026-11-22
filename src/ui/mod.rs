@@ -65,7 +65,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         palette::draw_palette(frame, frame.area(), palette, &app.theme);
     }
     if app.mode == Mode::Help {
-        palette::draw_help(frame, frame.area(), &app.theme);
+        palette::draw_help(frame, frame.area(), &app.theme, app.help_scroll);
     }
 
     render_confirm(frame, app);

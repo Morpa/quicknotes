@@ -372,6 +372,37 @@ impl Database {
         }
     }
 
+    /// Re-inserts a previously deleted item with its original id, timestamps,
+    /// state and tags. Fails when the id is taken again.
+    pub fn restore_item(&mut self, item: &Item) -> Result<Item> {
+        let tx = self.conn.transaction().context("starting restore")?;
+        tx.execute(
+            "INSERT INTO items
+                 (id, kind, title, body, language, done, due, priority, pinned,
+                  created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![
+                item.id,
+                item.kind,
+                item.title,
+                item.body,
+                clean_language(item.language.as_deref()),
+                item.done,
+                item.due,
+                item.priority.min(2),
+                item.pinned,
+                item.created_at,
+                item.updated_at,
+            ],
+        )
+        .context("restoring item")?;
+        sync_tags(&tx, item.id, &item.tags)?;
+        tx.commit().context("committing restore")?;
+
+        self.get_item(item.id)?
+            .with_context(|| format!("restored item {} could not be read back", item.id))
+    }
+
     /// Sets the priority (clamped to 0..=2) and returns the stored value.
     pub fn set_priority(&mut self, id: i64, priority: u8) -> Result<u8> {
         let priority = priority.min(2);
