@@ -1,14 +1,14 @@
  QUICKNOTES
 ───────────────────┌ HELP ──────────────────────────────────────────────────────┐───────────────────
 ▎ NOTES           2│ NAVIGATE                                                   │
-  TODOS           2│   ↑ ↓                move / scroll preview                 │ow
+  TODOS           2│   ↑ ↓                move / scroll preview                 │
   SNIPPETS        1│   ← →                switch pane                           │──────────────────
                    │   tab / shift+tab    next / previous section               │
- TAGS              │   home end pgup pgdn jump                                  │
-  #async         1 │                                                            │
-  #docs          1 │ ITEMS                                                      │
-  #home          1 │   n                  new item                              │
-  #rust          2 │   e / enter          edit                                  │
+                   │   home end pgup pgdn jump                                  │
+                   │                                                            │
+                   │ ITEMS                                                      │
+                   │   n                  new item                              │
+                   │   e / enter          edit                                  │
                    │   del                delete                                │
                    │   u                  undo last delete                      │
                    │   space / x          complete todo                         │
@@ -19,12 +19,12 @@
                    │                                                            │
                    │ FIND                                                       │
                    │   /                  search (enter keeps)                  │
-                   │   t / #              tag item / filter by tag              │
                    │   s                  sort order                            │
-                   │   esc                clear search, tag, then quit          │
+                   │   esc                clear search, then quit               │
                    │                                                            │
                    │ OTHER                                                      │
                    │   ctrl+k / :         command palette                       │
+                   │   T                  cycle theme (saved to config)         │
                    │ ↑↓ scroll · any other key closes                           │
 ───────────────────└────────────────────────────────────────────────────────────┘───────────────────
- ↑↓ move  n new  e edit  / search  t tags  s sort  ? help  q quit                                1/2
+ ↑↓ move  n new  e edit  / search  s sort  ? help  q quit                                        1/2

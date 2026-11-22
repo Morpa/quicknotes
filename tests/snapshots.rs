@@ -19,13 +19,12 @@ fn app(width: u16, height: u16) -> App {
     let mut db = Database::open_in_memory().unwrap();
     db.insert_item(
         &NewItem::note("Async runtime")
-            .body("# Tokio\n\nA **multi-threaded** runtime.\n\n- tasks\n- timers\n- io")
-            .tags(["rust", "async"]),
+            .body("# Tokio\n\nA **multi-threaded** runtime.\n\n- tasks\n- timers\n- io"),
     )
     .unwrap();
-    db.insert_item(&NewItem::note("Groceries").body("milk, eggs").tags(["home"]))
+    db.insert_item(&NewItem::note("Groceries").body("milk, eggs"))
         .unwrap();
-    db.insert_item(&NewItem::todo("Write the README").priority(2).tags(["docs"]))
+    db.insert_item(&NewItem::todo("Write the README").priority(2))
         .unwrap();
     db.insert_item(&NewItem::todo("Review PR").body("check the **tests**"))
         .unwrap();
@@ -33,8 +32,7 @@ fn app(width: u16, height: u16) -> App {
     db.set_done(done.id, true).unwrap();
     db.insert_item(
         &NewItem::snippet("Entry API", "rust")
-            .body("let count = map.entry(key).or_insert(0);\n*count += 1;")
-            .tags(["rust"]),
+            .body("let count = map.entry(key).or_insert(0);\n*count += 1;"),
     )
     .unwrap();
 
@@ -121,14 +119,11 @@ fn snippet_preview() {
 }
 
 #[test]
-fn tag_filter_and_search() {
+fn search_narrows_the_list() {
     let mut app = app(100, 24);
-    press(&mut app, KeyCode::Char('#'));
-    type_text(&mut app, "rust");
-    press(&mut app, KeyCode::Enter);
     press(&mut app, KeyCode::Char('/'));
     type_text(&mut app, "async");
-    assert_snapshot("filter_and_search", &screen(&app, 100, 24));
+    assert_snapshot("search", &screen(&app, 100, 24));
 }
 
 #[test]
@@ -146,13 +141,6 @@ fn command_palette() {
         .unwrap();
     type_text(&mut app, "go");
     assert_snapshot("palette", &screen(&app, 100, 24));
-}
-
-#[test]
-fn tag_picker() {
-    let mut app = app(100, 24);
-    press(&mut app, KeyCode::Char('t'));
-    assert_snapshot("tag_picker", &screen(&app, 100, 24));
 }
 
 #[test]

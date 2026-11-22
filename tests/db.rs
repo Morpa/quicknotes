@@ -1,5 +1,5 @@
 use chrono::{NaiveDate, Utc};
-use quicknotes::db::{Database, ItemQuery, Kind, NewItem, Stats, TodoState, normalize_tags};
+use quicknotes::db::{Database, ItemQuery, Kind, NewItem, Stats, TodoState};
 
 fn memory_db() -> Database {
     Database::open_in_memory().expect("in-memory database")
@@ -25,8 +25,7 @@ fn insert_and_get_roundtrip() {
             &NewItem::todo("Pagar boleto")
                 .body("conta de luz")
                 .due(due)
-                .priority(2)
-                .tags(["#Finance", "casa", "Casa"]),
+                .priority(2),
         )
         .unwrap();
 
@@ -37,7 +36,6 @@ fn insert_and_get_roundtrip() {
     assert_eq!(item.priority, 2);
     assert!(!item.done);
     assert!(!item.pinned);
-    assert_eq!(item.tags, vec!["casa", "finance"]);
     assert!((Utc::now() - item.created_at).num_seconds().abs() < 5);
 
     let fetched = db.get_item(item.id).unwrap().expect("item exists");
@@ -65,39 +63,29 @@ fn priority_is_clamped_and_language_normalized() {
 }
 
 #[test]
-fn update_replaces_fields_and_tags() {
+fn update_replaces_fields() {
     let mut db = memory_db();
-    let item = db
-        .insert_item(&NewItem::note("first").tags(["old"]))
-        .unwrap();
+    let item = db.insert_item(&NewItem::note("first")).unwrap();
 
     let mut edited = item.clone();
     edited.title = "second".to_string();
     edited.body = "new body".to_string();
-    edited.tags = vec!["New".to_string(), "tags".to_string()];
     db.update_item(&edited).unwrap();
 
     let fetched = db.get_item(item.id).unwrap().unwrap();
     assert_eq!(fetched.title, "second");
     assert_eq!(fetched.body, "new body");
-    assert_eq!(fetched.tags, vec!["new", "tags"]);
     assert!(fetched.updated_at >= item.updated_at);
-
-    assert_eq!(
-        db.all_tags().unwrap(),
-        vec![("new".to_string(), 1), ("tags".to_string(), 1),]
-    );
 }
 
 #[test]
-fn delete_removes_the_item_and_orphan_tags() {
+fn delete_removes_the_item() {
     let mut db = memory_db();
-    let item = db.insert_item(&NewItem::note("gone").tags(["x"])).unwrap();
+    let item = db.insert_item(&NewItem::note("gone")).unwrap();
 
     assert!(db.delete_item(item.id).unwrap());
     assert!(!db.delete_item(item.id).unwrap());
     assert!(db.get_item(item.id).unwrap().is_none());
-    assert!(db.all_tags().unwrap().is_empty());
 }
 
 #[test]
@@ -161,24 +149,6 @@ fn filters_and_ordering() {
         })
         .unwrap();
     assert_eq!(limited.len(), 1);
-}
-
-#[test]
-fn tag_filter_matches_normalized_names() {
-    let mut db = memory_db();
-    db.insert_item(&NewItem::note("tagged").tags(["Rust"]))
-        .unwrap();
-    db.insert_item(&NewItem::note("untagged")).unwrap();
-
-    let tagged = db
-        .list_items(&ItemQuery {
-            tag: Some("#RUST".to_string()),
-            ..ItemQuery::default()
-        })
-        .unwrap();
-    assert_eq!(tagged.len(), 1);
-    assert_eq!(tagged[0].title, "tagged");
-    assert_eq!(db.all_tags().unwrap(), vec![("rust".to_string(), 1)]);
 }
 
 #[test]
@@ -266,14 +236,6 @@ fn data_persists_across_reopen() {
 }
 
 #[test]
-fn tags_are_normalized() {
-    assert_eq!(
-        normalize_tags([" #Rust ", "rust", "", "Async"]),
-        vec!["async", "rust"]
-    );
-}
-
-#[test]
 fn sort_orders_and_priority_updates() {
     use quicknotes::db::SortOrder;
 
@@ -321,8 +283,7 @@ fn restore_brings_back_a_deleted_item_unchanged() {
             &NewItem::todo("Pagar luz")
                 .body("conta")
                 .priority(2)
-                .due(date(2026, 12, 1))
-                .tags(["casa", "contas"]),
+                .due(date(2026, 12, 1)),
         )
         .unwrap();
     db.set_pinned(original.id, true).unwrap();
@@ -331,12 +292,10 @@ fn restore_brings_back_a_deleted_item_unchanged() {
 
     assert!(db.delete_item(original.id).unwrap());
     assert!(db.get_item(original.id).unwrap().is_none());
-    assert!(db.all_tags().unwrap().is_empty());
 
     let restored = db.restore_item(&original).unwrap();
 
     assert_eq!(restored, original);
-    assert_eq!(db.all_tags().unwrap().len(), 2);
     // The search index follows the restore.
     let found = db
         .list_items(&ItemQuery {

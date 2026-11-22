@@ -1,14 +1,14 @@
  QUICKNOTES
 ────────────────────────────────────────────────────────────────────────────────────────────────────
   NOTES           2 │ SNIPPETS · 1                           │ Entry API
-  TODOS           2 │                                        │ SNIPPET · rust ·  #rust  · now
+  TODOS           2 │                                        │ SNIPPET · rust · now
 ▎ SNIPPETS        1 │▎   Entry API                        now│ ────────────────────────────────────
                     │                                        │ let count = map.entry(key).or_insert
- TAGS               │                                        │ *count += 1;
-  #async         1  │                                        │
-  #docs          1  │                                        │
-  #home          1  │                                        │
-  #rust          2  │                                        │
+                    │                                        │ *count += 1;
+                    │                                        │
+                    │                                        │
+                    │                                        │
+                    │                                        │
                     │                                        │
                     │                                        │
                     │                                        │
@@ -21,4 +21,4 @@
                     │                                        │
                     │                                        │
 ────────────────────────────────────────────────────────────────────────────────────────────────────
- ↑↓ move  n new  e edit  y copy  / search  t tags  s sort  ? help  q quit                        1/1
+ ↑↓ move  n new  e edit  y copy  / search  s sort  ? help  q quit                                1/1

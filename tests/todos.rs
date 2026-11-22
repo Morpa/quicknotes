@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use chrono::{Duration, Local};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use quicknotes::app::{App, Mode, Pane, Tone};
+use quicknotes::app::{App, Mode, Tone};
 use quicknotes::config::Config;
 use quicknotes::db::{Database, Kind, NewItem, SortOrder};
 use quicknotes::event::Action;
@@ -210,124 +210,8 @@ fn copy_reports_clipboard_failures_and_empty_bodies() {
     assert_eq!(app.status.as_ref().unwrap().tone, Tone::Warning);
 }
 
-fn tagged_app() -> App {
-    let mut db = Database::open_in_memory().unwrap();
-    db.insert_item(&NewItem::note("one").tags(["rust", "cli"]))
-        .unwrap();
-    db.insert_item(&NewItem::note("two").tags(["rust"]))
-        .unwrap();
-    db.insert_item(&NewItem::note("three").tags(["tui"]))
-        .unwrap();
-    app_with(db)
-}
-
 #[test]
-fn tag_picker_filters_the_list_and_esc_clears_it() {
-    let mut app = tagged_app();
-
-    press(&mut app, KeyCode::Char('#'));
-    assert_eq!(app.mode, Mode::Tags);
-    type_text(&mut app, "rust");
-    press(&mut app, KeyCode::Enter);
-
-    assert_eq!(app.mode, Mode::Normal);
-    assert_eq!(app.tag_filter.as_deref(), Some("rust"));
-    assert_eq!(app.items.len(), 2);
-    assert!(app.list_summary().contains("#rust"));
-
-    press(&mut app, KeyCode::Esc);
-    assert!(!app.should_quit);
-    assert_eq!(app.tag_filter, None);
-    assert_eq!(app.items.len(), 3);
-
-    press(&mut app, KeyCode::Esc);
-    assert!(app.should_quit);
-}
-
-#[test]
-fn filter_picker_can_clear_the_filter() {
-    let mut app = tagged_app();
-    app.tag_filter = Some("tui".to_string());
-    press(&mut app, KeyCode::Char('#'));
-
-    // The first row is "all tags".
-    press(&mut app, KeyCode::Enter);
-    assert_eq!(app.tag_filter, None);
-    assert_eq!(app.items.len(), 3);
-}
-
-#[test]
-fn tag_picker_assigns_and_creates_tags() {
-    let mut app = tagged_app();
-    let id = app
-        .items
-        .iter()
-        .find(|item| item.title == "three")
-        .unwrap()
-        .id;
-    app.selected = app.items.iter().position(|item| item.id == id).unwrap();
-
-    press(&mut app, KeyCode::Char('t'));
-    assert_eq!(app.mode, Mode::Tags);
-
-    // Create a brand new tag.
-    type_text(&mut app, "#Fresh");
-    press(&mut app, KeyCode::Enter);
-    assert_eq!(app.db.get_item(id).unwrap().unwrap().tags, ["fresh", "tui"]);
-
-    // Toggle an existing one on, then off again.
-    type_text(&mut app, "cli");
-    press(&mut app, KeyCode::Char(' '));
-    assert!(
-        app.db
-            .get_item(id)
-            .unwrap()
-            .unwrap()
-            .tags
-            .contains(&"cli".to_string())
-    );
-    type_text(&mut app, "cli");
-    press(&mut app, KeyCode::Char(' '));
-    assert!(
-        !app.db
-            .get_item(id)
-            .unwrap()
-            .unwrap()
-            .tags
-            .contains(&"cli".to_string())
-    );
-
-    press(&mut app, KeyCode::Esc);
-    assert_eq!(app.mode, Mode::Normal);
-    assert!(app.tags.iter().any(|(tag, _)| tag == "fresh"));
-    assert_eq!(app.selected_item().unwrap().id, id);
-}
-
-#[test]
-fn sidebar_tags_filter_on_enter() {
-    let mut app = tagged_app();
-    app.update(Action::Right).unwrap();
-    app.update(Action::Right).unwrap();
-    assert_eq!(app.focus, Pane::Sidebar);
-
-    // Sections are rows 0..3, so the next stop is the first tag ("cli").
-    for _ in 0..3 {
-        app.update(Action::Down).unwrap();
-    }
-    assert_eq!(app.sidebar_row, 3);
-    assert_eq!(app.section, Kind::Snippet);
-
-    app.update(Action::Edit).unwrap();
-    assert_eq!(app.mode, Mode::Normal);
-    assert_eq!(app.tag_filter.as_deref(), Some("cli"));
-
-    // Enter on the active tag clears it.
-    app.update(Action::Edit).unwrap();
-    assert_eq!(app.tag_filter, None);
-}
-
-#[test]
-fn editor_saves_due_priority_and_tags_for_a_todo() {
+fn editor_saves_due_and_priority_for_a_todo() {
     let mut app = todo_app();
     app.update(Action::New).unwrap();
 
@@ -337,8 +221,6 @@ fn editor_saves_due_priority_and_tags_for_a_todo() {
     press(&mut app, KeyCode::Tab); // priority
     press(&mut app, KeyCode::Right);
     press(&mut app, KeyCode::Right);
-    press_ctrl(&mut app, 't');
-    type_text(&mut app, "Work, #urgent work");
     press_ctrl(&mut app, 's');
 
     assert_eq!(app.mode, Mode::Normal);
@@ -349,7 +231,6 @@ fn editor_saves_due_priority_and_tags_for_a_todo() {
         Some(Local::now().date_naive() + Duration::days(1))
     );
     assert_eq!(item.priority, 2);
-    assert_eq!(item.tags, ["urgent", "work"]);
 }
 
 #[test]
@@ -372,7 +253,7 @@ fn invalid_due_blocks_an_explicit_save() {
 fn editing_a_todo_restores_due_and_priority() {
     let mut db = Database::open_in_memory().unwrap();
     let due = Local::now().date_naive() + Duration::days(9);
-    db.insert_item(&NewItem::todo("plan").due(due).priority(1).tags(["x"]))
+    db.insert_item(&NewItem::todo("plan").due(due).priority(1))
         .unwrap();
     let mut app = app_with(db);
     app.update(Action::NextSection).unwrap();
@@ -381,6 +262,5 @@ fn editing_a_todo_restores_due_and_priority() {
     let editor = app.editor.as_ref().unwrap();
     assert_eq!(editor.due_text(), due.format("%Y-%m-%d").to_string());
     assert_eq!(editor.priority, 1);
-    assert_eq!(editor.tags_list(), ["x"]);
     assert!(!editor.is_modified());
 }

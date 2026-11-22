@@ -1,10 +1,8 @@
-//! Queries and mutations for items, tags and full-text search.
-
-use std::collections::HashMap;
+//! Queries and mutations for items and full-text search.
 
 use anyhow::{Context, Result, bail};
 use chrono::{NaiveDate, Utc};
-use rusqlite::{Connection, OptionalExtension, Row, params, params_from_iter, types::Value};
+use rusqlite::{OptionalExtension, Row, params, params_from_iter, types::Value};
 
 use super::{Database, Item, Kind, NewItem};
 
@@ -97,7 +95,6 @@ impl SortOrder {
 #[derive(Debug, Clone, Default)]
 pub struct ItemQuery {
     pub kind: Option<Kind>,
-    pub tag: Option<String>,
     pub todo_state: TodoState,
     pub search: Option<String>,
     pub pinned_only: bool,
@@ -183,26 +180,13 @@ impl Database {
             return Ok(None);
         };
 
-        let mut items = vec![item];
-        self.attach_tags(&mut items)?;
-        Ok(items.pop())
+        Ok(Some(item))
     }
 
     pub fn list_items(&self, query: &ItemQuery) -> Result<Vec<Item>> {
         let mut sql = format!("SELECT {ITEM_COLUMNS} FROM items i");
         let mut conditions: Vec<&str> = Vec::new();
         let mut values: Vec<Value> = Vec::new();
-
-        if let Some(tag) = query
-            .tag
-            .as_deref()
-            .map(normalize_tag)
-            .filter(|tag| !tag.is_empty())
-        {
-            sql.push_str(" JOIN item_tags it ON it.item_id = i.id JOIN tags t ON t.id = it.tag_id");
-            conditions.push("t.name = ?");
-            values.push(Value::Text(tag));
-        }
 
         if let Some(search) = query
             .search
@@ -245,11 +229,7 @@ impl Database {
 
         let mut stmt = self.conn.prepare(&sql).context("preparing item query")?;
         let rows = stmt.query_map(params_from_iter(values), row_to_item)?;
-        let mut items: Vec<Item> = rows.collect::<rusqlite::Result<_>>()?;
-        drop(stmt);
-
-        self.attach_tags(&mut items)?;
-        Ok(items)
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
     pub fn insert_item(&mut self, new: &NewItem) -> Result<Item> {
@@ -279,7 +259,6 @@ impl Database {
         .context("inserting item")?;
 
         let id = tx.last_insert_rowid();
-        sync_tags(&tx, id, &new.tags)?;
         tx.commit().context("committing insert")?;
 
         self.get_item(id)?
@@ -319,7 +298,6 @@ impl Database {
             bail!("item {} does not exist", item.id);
         }
 
-        sync_tags(&tx, item.id, &item.tags)?;
         tx.commit().context("committing update")?;
         Ok(())
     }
@@ -330,9 +308,6 @@ impl Database {
             .execute("DELETE FROM items WHERE id = ?1", [id])
             .context("deleting item")?
             > 0;
-        if deleted {
-            prune_tags(&tx)?;
-        }
         tx.commit().context("committing delete")?;
         Ok(deleted)
     }
@@ -373,7 +348,7 @@ impl Database {
     }
 
     /// Re-inserts a previously deleted item with its original id, timestamps,
-    /// state and tags. Fails when the id is taken again.
+    /// and state. Fails when the id is taken again.
     pub fn restore_item(&mut self, item: &Item) -> Result<Item> {
         let tx = self.conn.transaction().context("starting restore")?;
         tx.execute(
@@ -396,7 +371,6 @@ impl Database {
             ],
         )
         .context("restoring item")?;
-        sync_tags(&tx, item.id, &item.tags)?;
         tx.commit().context("committing restore")?;
 
         self.get_item(item.id)?
@@ -449,57 +423,6 @@ impl Database {
         }
         Ok(())
     }
-
-    /// Tags with the number of items that use them, sorted by name.
-    pub fn all_tags(&self) -> Result<Vec<(String, u64)>> {
-        let mut stmt = self
-            .conn
-            .prepare(
-                "SELECT t.name, COUNT(it.item_id)
-                 FROM tags t
-                 JOIN item_tags it ON it.tag_id = t.id
-                 GROUP BY t.name
-                 ORDER BY t.name",
-            )
-            .context("preparing tag query")?;
-
-        let rows = stmt.query_map([], |row| {
-            let name: String = row.get(0)?;
-            let count: i64 = row.get(1)?;
-            Ok((name, count as u64))
-        })?;
-
-        Ok(rows.collect::<rusqlite::Result<_>>()?)
-    }
-
-    fn attach_tags(&self, items: &mut [Item]) -> Result<()> {
-        if items.is_empty() {
-            return Ok(());
-        }
-
-        let placeholders = vec!["?"; items.len()].join(",");
-        let sql = format!(
-            "SELECT it.item_id, t.name
-             FROM item_tags it
-             JOIN tags t ON t.id = it.tag_id
-             WHERE it.item_id IN ({placeholders})
-             ORDER BY t.name"
-        );
-
-        let ids: Vec<i64> = items.iter().map(|item| item.id).collect();
-        let mut stmt = self.conn.prepare(&sql).context("preparing tag lookup")?;
-        let mut rows = stmt.query(params_from_iter(ids.iter()))?;
-
-        let mut tags: HashMap<i64, Vec<String>> = HashMap::new();
-        while let Some(row) = rows.next()? {
-            tags.entry(row.get(0)?).or_default().push(row.get(1)?);
-        }
-
-        for item in items {
-            item.tags = tags.remove(&item.id).unwrap_or_default();
-        }
-        Ok(())
-    }
 }
 
 fn row_to_item(row: &Row<'_>) -> rusqlite::Result<Item> {
@@ -515,65 +438,13 @@ fn row_to_item(row: &Row<'_>) -> rusqlite::Result<Item> {
         pinned: row.get("pinned")?,
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
-        tags: Vec::new(),
     })
-}
-
-fn sync_tags(conn: &Connection, item_id: i64, tags: &[String]) -> Result<()> {
-    conn.execute("DELETE FROM item_tags WHERE item_id = ?1", [item_id])
-        .context("clearing item tags")?;
-
-    for tag in normalize_tags(tags) {
-        conn.execute(
-            "INSERT INTO tags (name) VALUES (?1) ON CONFLICT(name) DO NOTHING",
-            [&tag],
-        )
-        .context("inserting tag")?;
-        conn.execute(
-            "INSERT OR IGNORE INTO item_tags (item_id, tag_id)
-             SELECT ?1, id FROM tags WHERE name = ?2",
-            params![item_id, &tag],
-        )
-        .context("linking tag")?;
-    }
-
-    prune_tags(conn)
-}
-
-fn prune_tags(conn: &Connection) -> Result<()> {
-    conn.execute(
-        "DELETE FROM tags WHERE id NOT IN (SELECT tag_id FROM item_tags)",
-        [],
-    )
-    .context("pruning unused tags")?;
-    Ok(())
 }
 
 fn clean_language(language: Option<&str>) -> Option<String> {
     language
         .map(|value| value.trim().to_lowercase())
         .filter(|value| !value.is_empty())
-}
-
-/// Normalizes a single tag: trims, drops a leading `#` and lowercases.
-pub fn normalize_tag(tag: &str) -> String {
-    tag.trim().trim_start_matches('#').to_lowercase()
-}
-
-/// Normalizes, sorts and deduplicates tags.
-pub fn normalize_tags<I, S>(tags: I) -> Vec<String>
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<str>,
-{
-    let mut tags: Vec<String> = tags
-        .into_iter()
-        .map(|tag| normalize_tag(tag.as_ref()))
-        .filter(|tag| !tag.is_empty())
-        .collect();
-    tags.sort();
-    tags.dedup();
-    tags
 }
 
 /// Turns free-form input into a safe FTS5 query where every term is a prefix.

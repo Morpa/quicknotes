@@ -64,13 +64,8 @@ fn pinning_with_nothing_selected_warns() {
 #[test]
 fn undo_restores_the_deleted_item_exactly() {
     let mut db = Database::open_in_memory().unwrap();
-    db.insert_item(
-        &NewItem::todo("keep me")
-            .body("details")
-            .priority(2)
-            .tags(["a", "b"]),
-    )
-    .unwrap();
+    db.insert_item(&NewItem::todo("keep me").body("details").priority(2))
+        .unwrap();
     let mut app = app_with(db);
     app.update(Action::NextSection).unwrap();
     app.update(Action::ToggleDone).unwrap();
@@ -81,12 +76,10 @@ fn undo_restores_the_deleted_item_exactly() {
     press(&mut app, KeyCode::Char('y'));
     assert!(app.items.is_empty());
     assert!(app.status.as_ref().unwrap().text.contains("u to undo"));
-    assert!(app.tags.is_empty());
 
     press(&mut app, KeyCode::Char('u'));
 
     assert_eq!(app.selected_item().unwrap(), &before);
-    assert_eq!(app.tags.len(), 2);
     assert_eq!(tone(&app), Tone::Success);
     assert!(app.deleted.is_empty());
 }

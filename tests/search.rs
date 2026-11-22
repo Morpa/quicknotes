@@ -11,19 +11,11 @@ use ratatui::layout::Rect;
 
 fn app() -> App {
     let mut db = Database::open_in_memory().unwrap();
-    db.insert_item(
-        &NewItem::note("Tokio runtime")
-            .body("async executor")
-            .tags(["rust"]),
-    )
-    .unwrap();
-    db.insert_item(
-        &NewItem::note("Token bucket")
-            .body("rate limiting")
-            .tags(["algo"]),
-    )
-    .unwrap();
-    db.insert_item(&NewItem::note("Groceries").body("milk").tags(["rust"]))
+    db.insert_item(&NewItem::note("Tokio runtime").body("async executor"))
+        .unwrap();
+    db.insert_item(&NewItem::note("Token bucket").body("rate limiting"))
+        .unwrap();
+    db.insert_item(&NewItem::note("Groceries").body("milk"))
         .unwrap();
     db.insert_item(&NewItem::todo("Read tokio docs")).unwrap();
 
@@ -124,21 +116,22 @@ fn esc_inside_the_bar_cancels_the_search() {
 }
 
 #[test]
-fn section_tag_and_query_combine() {
+fn search_stays_within_the_current_section() {
     let mut app = app();
-    app.tag_filter = Some("rust".to_string());
     press(&mut app, KeyCode::Char('/'));
     type_text(&mut app, "tok");
-    assert_eq!(titles(&app), ["Tokio runtime"]);
-
+    assert_eq!(app.items.len(), 2);
     press(&mut app, KeyCode::Enter);
+
     app.update(Action::NextSection).unwrap();
     assert_eq!(app.section, Kind::Todo);
-    // No todo carries the tag, so the combined filter finds nothing.
+    assert_eq!(titles(&app), ["Read tokio docs"]);
+
+    app.search = "zzz".to_string();
+    app.update(Action::Refresh).unwrap();
     assert!(app.items.is_empty());
     assert!(screen(&app).contains("No matches"));
 
-    app.update(Action::Back).unwrap();
     app.update(Action::Back).unwrap();
     assert_eq!(titles(&app), ["Read tokio docs"]);
 }
@@ -208,14 +201,12 @@ fn palette_closes_with_esc_and_ignores_empty_results() {
 }
 
 #[test]
-fn clear_filters_command_resets_search_and_tag() {
+fn clear_search_command_resets_the_search() {
     let mut app = app();
-    app.tag_filter = Some("rust".to_string());
     app.search = "tok".to_string();
     app.run_command(Command::ClearFilters).unwrap();
 
     assert!(app.search.is_empty());
-    assert_eq!(app.tag_filter, None);
     assert_eq!(app.items.len(), 3);
     assert_eq!(
         app.status.as_ref().map(|status| status.tone),

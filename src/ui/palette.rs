@@ -24,8 +24,6 @@ pub enum Command {
     Undo,
     ExternalEdit,
     Copy,
-    TagItem,
-    FilterTag,
     Search,
     ClearFilters,
     Go(Kind),
@@ -35,7 +33,7 @@ pub enum Command {
 }
 
 impl Command {
-    pub const ALL: [Command; 21] = [
+    pub const ALL: [Command; 19] = [
         Self::New,
         Self::Edit,
         Self::Delete,
@@ -47,8 +45,6 @@ impl Command {
         Self::Undo,
         Self::ExternalEdit,
         Self::Copy,
-        Self::TagItem,
-        Self::FilterTag,
         Self::Search,
         Self::ClearFilters,
         Self::Go(Kind::Note),
@@ -72,10 +68,8 @@ impl Command {
             Self::Undo => "Undo last delete",
             Self::ExternalEdit => "Edit body in $EDITOR",
             Self::Copy => "Copy body to clipboard",
-            Self::TagItem => "Tag item…",
-            Self::FilterTag => "Filter by tag…",
             Self::Search => "Search",
-            Self::ClearFilters => "Clear search and tag filter",
+            Self::ClearFilters => "Clear search",
             Self::Go(Kind::Note) => "Go to notes",
             Self::Go(Kind::Todo) => "Go to todos",
             Self::Go(Kind::Snippet) => "Go to snippets",
@@ -98,8 +92,6 @@ impl Command {
             Self::Undo => "u",
             Self::ExternalEdit => "E",
             Self::Copy => "y",
-            Self::TagItem => "t",
-            Self::FilterTag => "#",
             Self::Search => "/",
             Self::ClearFilters => "esc",
             Self::Go(_) => "tab",
@@ -363,9 +355,8 @@ const HELP_RIGHT: &[HelpSection] = &[
         "FIND",
         &[
             ("/", "search (enter keeps)"),
-            ("t / #", "tag item / filter by tag"),
             ("s", "sort order"),
-            ("esc", "clear search, tag, then quit"),
+            ("esc", "clear search, then quit"),
         ],
     ),
     (

@@ -5,16 +5,11 @@ network. One `qn` binary, one SQLite file, Kanagawa colors.
 
 ```
 ▎ NOTES           2 │ NOTES · 2                              │ Groceries
-  TODOS           2 │                                        │ NOTE ·  #home  · now
+  TODOS           2 │                                        │ NOTE · now
   SNIPPETS        1 │▎   Groceries                        now│ ────────────────────────────────────
                     │    Async runtime                    now│ milk, eggs
- TAGS               │                                        │
-  #async         1  │                                        │
-  #docs          1  │                                        │
-  #home          1  │                                        │
-  #rust          2  │                                        │
 ────────────────────────────────────────────────────────────────────────────────────────────────────
- ↑↓ move  n new  e edit  / search  t tags  s sort  ? help  q quit                                1/2
+ ↑↓ move  n new  e edit  / search  s sort  ? help  q quit                                        1/2
 ```
 
 <details>
@@ -24,53 +19,44 @@ Todos with priority and completed items:
 
 ```
   NOTES           2 │ TODOS · 2 open · 1 done                │ Write the README
-▎ TODOS           2 │                                        │ TODO · high priority ·  #docs  · now
+▎ TODOS           2 │                                        │ TODO · high priority · now
   SNIPPETS        1 │▎   [ ] Write the README          !! now│ ────────────────────────────────────
                     │    [ ] Review PR                    now│ (no content yet)
- TAGS               │    [x] Ship phase 4                 now│
-  #async         1  │                                        │
-  #docs          1  │                                        │
-  #home          1  │                                        │
-  #rust          2  │                                        │
+                    │    [x] Ship phase 4                 now│
 ────────────────────────────────────────────────────────────────────────────────────────────────────
- ↑↓ move  n new  e edit  space done  / search  t tags  s sort  ? help  q quit                    1/3
+ ↑↓ move  n new  e edit  space done  / search  s sort  ? help  q quit                            1/3
 ```
 
 Snippet preview (syntax colors are not visible in plain text):
 
 ```
   NOTES           2 │ SNIPPETS · 1                           │ Entry API
-  TODOS           2 │                                        │ SNIPPET · rust ·  #rust  · now
+  TODOS           2 │                                        │ SNIPPET · rust · now
 ▎ SNIPPETS        1 │▎   Entry API                        now│ ────────────────────────────────────
                     │                                        │ let count = map.entry(key).or_insert
- TAGS               │                                        │ *count += 1;
-  #async         1  │                                        │
-  #docs          1  │                                        │
-  #home          1  │                                        │
-  #rust          2  │                                        │
+                    │                                        │ *count += 1;
 ────────────────────────────────────────────────────────────────────────────────────────────────────
- ↑↓ move  n new  e edit  y copy  / search  t tags  s sort  ? help  q quit                        1/1
+ ↑↓ move  n new  e edit  y copy  / search  s sort  ? help  q quit                                1/1
 ```
 
 Command palette:
 
 ```
 ▎ NOTES           2 │ NOTES · 2                              │ Groceries
-  TODOS           2 │                                        │ NOTE ·  #home  · now
+  TODOS           2 │                                        │ NOTE · now
   SNIPPETS        1 │▎   Groceries                        now│ ────────────────────────────────────
                     │    Async runtime                    now│ milk, eggs
- TAGS               │                                        │
-  #async         1  │  ┌ COMMANDS ──────────────────────────────────────────┐
-  #docs          1  │  │ › go                                               │
-  #home          1  │  │ ────────────────────────────────────────────────── │
-  #rust          2  │  │  Go to notes                                  tab  │
+                    │  ┌ COMMANDS ──────────────────────────────────────────┐
+                    │  │ › go                                               │
+                    │  │ ────────────────────────────────────────────────── │
+                    │  │  Go to notes                                  tab  │
                     │  │  Go to todos                                  tab  │
                     │  │  Go to snippets                               tab  │
                     │  │  Cycle theme (wave, dragon, lotus)              T  │
                     │  │ enter run  esc close                               │
                     │  └────────────────────────────────────────────────────┘
 ────────────────────────────────────────────────────────────────────────────────────────────────────
- ↑↓ move  n new  e edit  / search  t tags  s sort  ? help  q quit                                1/2
+ ↑↓ move  n new  e edit  / search  s sort  ? help  q quit                                        1/2
 ```
 
 </details>
@@ -121,18 +107,12 @@ is the reference); with any other font use `icons = "ascii"`.
 | `y` | copy the selected item's body to the clipboard |
 | `E` | edit the body in `$VISUAL` / `$EDITOR` (falls back to `vi`) |
 | `T` | cycle the theme Wave → Dragon → Lotus and save it to `config.toml` |
-| `t` | tag picker for the selected item |
-| `#` | filter the lists by a tag |
 | `/` | search titles and bodies as you type (`Enter` keeps it, `Esc` clears it) |
 | `Ctrl+K`, `:` | command palette (fuzzy matching) |
 | `?` | keyboard help (two columns on wide terminals, scrollable on narrow ones) |
 | `r` | reload from the database |
-| `Esc` | clear the search, then the tag filter, then quit |
+| `Esc` | clear the search, then quit |
 | `q`, `Ctrl+C` | quit |
-
-In the sidebar, `↑` `↓` walk the sections and then the tags; `Enter` on a tag
-turns its filter on or off. In the tag picker, type to search, `Space` toggles
-a tag on the item (a new name offers to create it) and `Esc` closes it.
 
 `E` suspends the interface, opens a temporary file (`.md`, or the snippet's
 language extension so your editor picks a syntax) and applies the result when
@@ -150,10 +130,9 @@ Inside the editor:
 | `Tab` / `Shift+Tab` | next / previous field (`Tab` indents inside the body) |
 | `Enter` | next field from title/language; newline in the body |
 | `Ctrl+P` | toggle the live markdown preview |
-| `Ctrl+T` | jump to the tags field |
 
 Todos also have a due date (`2026-12-31`, `today`, `tomorrow`, `+3d`, `+2w` or
-empty) and a priority (`←` `→`). Tags are comma- or space-separated.
+empty) and a priority (`←` `→`).
 
 The editor autosaves after 1.2 seconds of inactivity once the title is not
 empty, so a crash or a closed terminal does not lose the draft. Cancelling an
@@ -175,11 +154,8 @@ terminals stay usable.
 - Overrides: `QUICKNOTES_DB`, `QUICKNOTES_CONFIG`, `QUICKNOTES_LOG` (`debug`, `trace`, …).
 - Logs go to `quicknotes.log` in the data directory — never to the terminal.
 
-Search, section and tag filters combine: with a tag active, `/` only looks
-inside items that carry it, in the current section.
-
-Notes, todos and snippets share one table. Tags are normalized (lowercased,
-leading `#` dropped) and full-text search uses FTS5 with prefix matching.
+Notes, todos and snippets share one table, and full-text search uses FTS5 with
+prefix matching.
 
 ## Configuration
 
@@ -220,7 +196,7 @@ cargo fmt --all --check
 | 1 | Config, SQLite + FTS5, Kanagawa theme ✅ |
 | 2 | TUI shell: event loop, three-pane layout, navigation ✅ |
 | 3 | Create/edit/delete, editor overlay, markdown preview, autosave ✅ |
-| 4 | Todo interactions, snippet highlighting, tags ✅ |
+| 4 | Todo interactions, snippet highlighting ✅ |
 | 5 | Incremental search and command palette ✅ |
 | 6 | Auto theme, UI snapshots, polish ✅ |
 | – | Pin, undo delete, `$EDITOR`, saved theme ✅ |

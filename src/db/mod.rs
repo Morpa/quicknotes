@@ -10,7 +10,7 @@ use anyhow::{Context, Result, bail};
 use rusqlite::Connection;
 
 pub use model::{Item, Kind, ModelError, NewItem};
-pub use query::{ItemQuery, SortOrder, Stats, TodoState, fts_query, normalize_tag, normalize_tags};
+pub use query::{ItemQuery, SortOrder, Stats, TodoState, fts_query};
 
 const MIGRATIONS: &[&str] = &[include_str!("../../migrations/001_init.sql")];
 

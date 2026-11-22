@@ -3,16 +3,16 @@
 ▎ NOTES      ┌ HELP ────────────────────────────────────────────────────────────────────────────────────────────────┐
   TODOS      │ NAVIGATE                                          FIND                                               │
   SNIPPETS   │   ↑ ↓                move / scroll preview          /                  search (enter keeps)          │────────────
-             │   ← →                switch pane                    t / #              tag item / filter by tag      │
- TAGS        │   tab / shift+tab    next / previous section        s                  sort order                    │
-  #async     │   home end pgup pgdn jump                           esc                clear search, tag, then quit  │
-  #docs      │                                                                                                      │
-  #home      │ ITEMS                                             OTHER                                              │
-  #rust      │   n                  new item                       ctrl+k / :         command palette               │
-             │   e / enter          edit                           T                  cycle theme (saved to config) │
-             │   del                delete                         r                  reload                        │
-             │   u                  undo last delete               ?                  this help                     │
-             │   space / x          complete todo                  q / ctrl+c         quit                          │
+             │   ← →                switch pane                    s                  sort order                    │
+             │   tab / shift+tab    next / previous section        esc                clear search, then quit       │
+             │   home end pgup pgdn jump                                                                            │
+             │                                                   OTHER                                              │
+             │ ITEMS                                               ctrl+k / :         command palette               │
+             │   n                  new item                       T                  cycle theme (saved to config) │
+             │   e / enter          edit                           r                  reload                        │
+             │   del                delete                         ?                  this help                     │
+             │   u                  undo last delete               q / ctrl+c         quit                          │
+             │   space / x          complete todo                                                                   │
              │   p                  todo priority                                                                   │
              │   *                  pin / unpin                                                                     │
              │   y                  copy body                                                                       │
@@ -21,4 +21,4 @@
              │ press any key to close                                                                               │
              └──────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- ↑↓ move  n new  e edit  / search  t tags  s sort  ? help  q quit                                                              1/2
+ ↑↓ move  n new  e edit  / search  s sort  ? help  q quit                                                                      1/2

@@ -44,7 +44,6 @@ fn wide_screen_shows_all_panes() {
 
     assert!(text.contains("QUICKNOTES"));
     assert!(text.contains("NOTES"));
-    assert!(text.contains("TAGS"));
     assert!(text.contains("Async runtime"));
     assert!(text.contains("tokio and futures"));
     assert!(text.contains("move"));
@@ -59,7 +58,6 @@ fn narrow_screen_hides_side_panes() {
 
     assert!(text.contains("QUICKNOTES"));
     assert!(text.contains("Async runtime"));
-    assert!(!text.contains("TAGS"));
 }
 
 #[test]
@@ -169,29 +167,6 @@ fn snippet_preview_is_syntax_highlighted() {
 
     // `fn` and `let` are keywords.
     assert!(keyword_cells >= 5, "{keyword_cells}");
-}
-
-#[test]
-fn tags_render_as_chips_and_the_active_filter_is_marked() {
-    let mut db = Database::open_in_memory().unwrap();
-    db.insert_item(&NewItem::note("tagged").body("body").tags(["rust", "cli"]))
-        .unwrap();
-    db.insert_item(&NewItem::note("other").tags(["tui"]))
-        .unwrap();
-    let config = Config::default();
-    let theme = Theme::from_config(&config);
-    let mut app = App::new(config, theme, db).unwrap();
-    app.set_area(Rect::new(0, 0, 120, 32));
-
-    let before = render(&app, 120, 32);
-    assert!(before.contains(" #cli "));
-    assert!(!before.contains('●'));
-
-    app.tag_filter = Some("tui".to_string());
-    app.update(Action::Refresh).unwrap();
-    let after = render(&app, 120, 32);
-    assert!(after.contains('●'));
-    assert!(after.contains("with #tui"));
 }
 
 #[test]

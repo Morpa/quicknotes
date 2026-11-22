@@ -110,7 +110,6 @@ pub struct Item {
     pub pinned: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    pub tags: Vec<String>,
 }
 
 impl Item {
@@ -132,7 +131,6 @@ pub struct NewItem {
     pub language: Option<String>,
     pub due: Option<NaiveDate>,
     pub priority: u8,
-    pub tags: Vec<String>,
 }
 
 impl NewItem {
@@ -144,7 +142,6 @@ impl NewItem {
             language: None,
             due: None,
             priority: 0,
-            tags: Vec::new(),
         }
     }
 
@@ -179,15 +176,6 @@ impl NewItem {
 
     pub fn priority(mut self, priority: u8) -> Self {
         self.priority = priority;
-        self
-    }
-
-    pub fn tags<I, S>(mut self, tags: I) -> Self
-    where
-        I: IntoIterator<Item = S>,
-        S: Into<String>,
-    {
-        self.tags = tags.into_iter().map(Into::into).collect();
         self
     }
 }

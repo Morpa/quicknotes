@@ -10,7 +10,7 @@ use crossterm::event::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     Quit,
-    /// Esc: clears the tag filter first, quits when there is none.
+    /// Esc: clears the search first, quits when there is none.
     Back,
     NextSection,
     PrevSection,
@@ -30,8 +30,6 @@ pub enum Action {
     CyclePriority,
     CycleSort,
     Copy,
-    PickTags,
-    FilterTags,
     Search,
     CycleTheme,
     TogglePin,
@@ -72,8 +70,6 @@ pub fn map_key(key: KeyEvent) -> Option<Action> {
         KeyCode::Char('p') => Some(Action::CyclePriority),
         KeyCode::Char('s') => Some(Action::CycleSort),
         KeyCode::Char('y') => Some(Action::Copy),
-        KeyCode::Char('t') => Some(Action::PickTags),
-        KeyCode::Char('#') => Some(Action::FilterTags),
         KeyCode::Char('/') => Some(Action::Search),
         KeyCode::Char('T') => Some(Action::CycleTheme),
         KeyCode::Char('*') => Some(Action::TogglePin),

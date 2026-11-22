@@ -12,13 +12,11 @@ use crate::db::{Item, Kind, SortOrder};
 use crate::markdown;
 use crate::ui::layout::FrameLayout;
 use crate::ui::theme::Theme;
-use crate::ui::widgets::chips;
 use crate::ui::widgets::{display_width, due_label, relative_time, truncate};
 
 pub mod editor;
 pub mod layout;
 pub mod palette;
-pub mod picker;
 pub mod theme;
 pub mod widgets;
 
@@ -51,12 +49,6 @@ pub fn draw(frame: &mut Frame, app: &App) {
         && matches!(app.mode, Mode::Edit | Mode::ConfirmDiscard)
     {
         editor::draw(frame, frame.area(), editor, &app.theme);
-    }
-
-    if let Some(picker) = &app.tag_picker
-        && app.mode == Mode::Tags
-    {
-        picker::draw(frame, frame.area(), picker, &app.theme);
     }
 
     if let Some(palette) = &app.palette
@@ -123,22 +115,9 @@ fn render_sidebar(frame: &mut Frame, rect: Rect, app: &App) {
     }
 
     let width = rect.width as usize;
-    let mut lines: Vec<Line<'static>> = Vec::with_capacity(Kind::ALL.len() + 10);
+    let mut lines: Vec<Line<'static>> = Vec::with_capacity(Kind::ALL.len());
     for kind in Kind::ALL {
         lines.push(section_line(kind, width, app));
-    }
-
-    lines.push(Line::default());
-    lines.push(Line::from(Span::styled(" TAGS", app.theme.label())));
-
-    if app.tags.is_empty() {
-        lines.push(Line::from(Span::styled("  no tags yet", app.theme.faint())));
-    } else {
-        for (index, (tag, count)) in app.sidebar_tags().iter().enumerate() {
-            let row = Kind::ALL.len() + index;
-            let cursor = app.focus == Pane::Sidebar && app.sidebar_row == row;
-            lines.push(tag_line(tag, *count, width, cursor, app));
-        }
     }
 
     frame.render_widget(Paragraph::new(lines), rect);
@@ -190,36 +169,6 @@ fn section_line(kind: Kind, width: usize, app: &App) -> Line<'static> {
     ])
 }
 
-fn tag_line(tag: &str, count: u64, width: usize, cursor: bool, app: &App) -> Line<'static> {
-    let active = app.tag_filter.as_deref() == Some(tag);
-    let base = if cursor {
-        app.theme.selected()
-    } else {
-        app.theme.text()
-    };
-
-    let marker = if active { "●" } else { " " };
-    let label = format!(" #{tag}");
-    let count = count.to_string();
-    let label_width = width.saturating_sub(display_width(&count) + 3);
-    let label = truncate(&label, label_width);
-    let gap = width.saturating_sub(display_width(&label) + display_width(&count) + 3);
-
-    let label_style = if active {
-        base.patch(app.theme.accent()).add_modifier(Modifier::BOLD)
-    } else {
-        base.patch(app.theme.tag())
-    };
-
-    Line::from(vec![
-        Span::styled(marker, base.patch(app.theme.accent())),
-        Span::styled(label, label_style),
-        Span::styled(" ".repeat(gap), base),
-        Span::styled(count, base.patch(app.theme.dimmed())),
-        Span::styled(" ", base),
-    ])
-}
-
 fn render_list(frame: &mut Frame, layout: &FrameLayout, app: &App) {
     if layout.list.width == 0 || layout.list.height == 0 {
         return;
@@ -244,9 +193,8 @@ fn render_list(frame: &mut Frame, layout: &FrameLayout, app: &App) {
     frame.render_widget(Paragraph::new(header), layout.list_header);
 
     if app.items.is_empty() {
-        let filtered = !app.search.is_empty() || app.tag_filter.is_some();
-        let (empty_title, empty_hint) = if filtered {
-            ("  No matches", "  Press esc to clear the search or filter.")
+        let (empty_title, empty_hint) = if !app.search.is_empty() {
+            ("  No matches", "  Press esc to clear the search.")
         } else {
             (
                 "  Nothing here yet",
@@ -486,10 +434,6 @@ fn preview_meta_line(item: &Item, app: &App) -> Line<'static> {
         spans.push(Span::styled(" · ", theme.faint()));
         spans.push(Span::styled(label, style));
     }
-    if !item.tags.is_empty() {
-        spans.push(Span::styled(" · ", theme.faint()));
-        spans.extend(chips(&item.tags, theme));
-    }
     if let Some(due) = item.due {
         let today = Local::now().date_naive();
         let style = if !item.done && due < today {
@@ -571,7 +515,7 @@ fn render_confirm(frame: &mut Frame, app: &App) {
             "y discard · n keep editing",
             app.theme.warning(),
         ),
-        Mode::Normal | Mode::Edit | Mode::Tags | Mode::Search | Mode::Palette | Mode::Help => {
+        Mode::Normal | Mode::Edit | Mode::Search | Mode::Palette | Mode::Help => {
             return;
         }
     };
@@ -621,12 +565,7 @@ fn search_line(app: &App) -> Line<'static> {
 fn hints_line(app: &App) -> Line<'static> {
     let theme = &app.theme;
     let mut pairs: Vec<(&'static str, &'static str)> = match app.focus {
-        Pane::Sidebar => vec![
-            ("↑↓", "move"),
-            ("enter", "filter tag"),
-            ("n", "new"),
-            ("q", "quit"),
-        ],
+        Pane::Sidebar => vec![("↑↓", "section"), ("n", "new"), ("q", "quit")],
         Pane::List => vec![("↑↓", "move"), ("n", "new"), ("e", "edit")],
         Pane::Preview => vec![("↑↓", "scroll"), ("←→", "pane"), ("e", "edit")],
     };
@@ -637,13 +576,7 @@ fn hints_line(app: &App) -> Line<'static> {
             Kind::Snippet => pairs.push(("y", "copy")),
             Kind::Note => {}
         }
-        pairs.extend([
-            ("/", "search"),
-            ("t", "tags"),
-            ("s", "sort"),
-            ("?", "help"),
-            ("q", "quit"),
-        ]);
+        pairs.extend([("/", "search"), ("s", "sort"), ("?", "help"), ("q", "quit")]);
     }
 
     let mut spans = vec![Span::raw(" ")];

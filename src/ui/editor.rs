@@ -15,10 +15,10 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui_textarea::{CursorMove, TextArea};
 
-use crate::db::{Item, Kind, normalize_tags};
+use crate::db::{Item, Kind};
 use crate::markdown;
 use crate::ui::theme::Theme;
-use crate::ui::widgets::{chips, display_width, truncate};
+use crate::ui::widgets::{display_width, truncate};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Field {
@@ -27,7 +27,6 @@ pub enum Field {
     Due,
     Priority,
     Body,
-    Tags,
 }
 
 /// Labels for the three priority levels stored in the database.
@@ -48,7 +47,6 @@ pub struct Editor {
     title: TextArea<'static>,
     language: TextArea<'static>,
     due: TextArea<'static>,
-    tags: TextArea<'static>,
     body: TextArea<'static>,
 }
 
@@ -67,16 +65,12 @@ impl Editor {
                 .map(format_due)
                 .unwrap_or_default(),
         ]);
-        let mut tags = TextArea::new(vec![
-            item.map(|item| item.tags.join(", ")).unwrap_or_default(),
-        ]);
 
         title.move_cursor(CursorMove::End);
         language.move_cursor(CursorMove::End);
         due.move_cursor(CursorMove::End);
-        tags.move_cursor(CursorMove::End);
 
-        for area in [&mut title, &mut language, &mut due, &mut tags, &mut body] {
+        for area in [&mut title, &mut language, &mut due, &mut body] {
             area.set_style(theme.text().bg(theme.surface));
             area.set_placeholder_style(theme.faint().bg(theme.surface));
             area.set_cursor_line_style(Style::default());
@@ -89,7 +83,6 @@ impl Editor {
         language.set_placeholder_text("language");
         body.set_placeholder_text("Write something…");
         due.set_placeholder_text("none · today · tomorrow · +3d · 2026-12-31");
-        tags.set_placeholder_text("comma-separated, e.g. rust, cli");
 
         Self {
             item_id: item.map(|item| item.id),
@@ -104,7 +97,6 @@ impl Editor {
             title,
             language,
             due,
-            tags,
             body,
         }
     }
@@ -125,18 +117,6 @@ impl Editor {
         self.due.lines().join("")
     }
 
-    pub fn tags_text(&self) -> String {
-        self.tags.lines().join(" ")
-    }
-
-    /// Tags typed in the tags field, normalized, sorted and deduplicated.
-    pub fn tags_list(&self) -> Vec<String> {
-        normalize_tags(
-            self.tags_text()
-                .split(|character: char| character == ',' || character.is_whitespace()),
-        )
-    }
-
     pub fn normalized_language(&self) -> Option<String> {
         let language = self.language_text().trim().to_lowercase();
         (!language.is_empty()).then_some(language)
@@ -152,7 +132,6 @@ impl Editor {
             Field::Title => &mut self.title,
             Field::Language => &mut self.language,
             Field::Due => &mut self.due,
-            Field::Tags => &mut self.tags,
             Field::Body => &mut self.body,
             Field::Priority => unreachable!("handled above"),
         };
@@ -193,25 +172,12 @@ impl Editor {
         true
     }
 
-    /// Order in which Tab visits the fields. Tags come last so that Tab from
-    /// the title still lands on the body.
+    /// Order in which Tab visits the fields.
     pub fn field_order(&self) -> &'static [Field] {
         match self.kind {
-            Kind::Snippet => &[Field::Title, Field::Language, Field::Body, Field::Tags],
-            Kind::Todo => &[
-                Field::Title,
-                Field::Due,
-                Field::Priority,
-                Field::Body,
-                Field::Tags,
-            ],
-            Kind::Note => &[Field::Title, Field::Body, Field::Tags],
-        }
-    }
-
-    pub fn focus(&mut self, field: Field) {
-        if self.field_order().contains(&field) {
-            self.field = field;
+            Kind::Snippet => &[Field::Title, Field::Language, Field::Body],
+            Kind::Todo => &[Field::Title, Field::Due, Field::Priority, Field::Body],
+            Kind::Note => &[Field::Title, Field::Body],
         }
     }
 
@@ -237,7 +203,6 @@ impl Editor {
                 self.title_text().trim() != item.title
                     || self.body_text() != item.body
                     || self.normalized_language() != item.language
-                    || self.tags_list() != item.tags
                     || (self.kind == Kind::Todo
                         && (self.due_text().trim() != item.due.map(format_due).unwrap_or_default()
                             || self.priority != item.priority))
@@ -246,7 +211,6 @@ impl Editor {
                 !self.title_text().trim().is_empty()
                     || !self.body_text().trim().is_empty()
                     || !self.language_text().trim().is_empty()
-                    || !self.tags_list().is_empty()
                     || (self.kind == Kind::Todo
                         && (!self.due_text().trim().is_empty() || self.priority != 0))
             }
@@ -434,9 +398,7 @@ fn render_fields(frame: &mut Frame, area: Rect, editor: &Editor, theme: &Theme) 
     render_label(frame, area, y, "BODY", editor.field == Field::Body, theme);
     y += 1;
 
-    // The tags block (label, input, chips) sits under the body.
-    let tags_block = 3;
-    let height = area.bottom().saturating_sub(y + tags_block + 1);
+    let height = area.bottom().saturating_sub(y);
     if height > 0 {
         let body = Rect {
             x: area.x,
@@ -445,31 +407,6 @@ fn render_fields(frame: &mut Frame, area: Rect, editor: &Editor, theme: &Theme) 
             height,
         };
         frame.render_widget(&editor.body, body);
-    }
-    y += height + 1;
-
-    render_label(frame, area, y, "TAGS", editor.field == Field::Tags, theme);
-    if y + 1 < area.bottom() {
-        frame.render_widget(&editor.tags, text_input(area, y + 1));
-    }
-    if y + 2 < area.bottom() {
-        let tags = editor.tags_list();
-        let line = if tags.is_empty() {
-            Line::from(Span::styled("  no tags", theme.faint()))
-        } else {
-            let mut spans = vec![Span::raw(" ")];
-            spans.extend(chips(&tags, theme));
-            Line::from(spans)
-        };
-        frame.render_widget(
-            Paragraph::new(line),
-            Rect {
-                x: area.x,
-                y: y + 2,
-                width: area.width,
-                height: 1,
-            },
-        );
     }
 }
 
@@ -614,7 +551,6 @@ fn editor_hints(field: Field, theme: &Theme) -> Line<'static> {
             ("ctrl+s", "save"),
             ("tab", "indent"),
             ("shift+tab", "field"),
-            ("ctrl+t", "tags"),
             ("ctrl+p", "preview"),
             ("esc", "cancel"),
         ],
@@ -624,16 +560,9 @@ fn editor_hints(field: Field, theme: &Theme) -> Line<'static> {
             ("tab", "next field"),
             ("esc", "cancel"),
         ],
-        Field::Tags => &[
-            ("ctrl+s", "save"),
-            ("tab", "title"),
-            ("ctrl+p", "preview"),
-            ("esc", "cancel"),
-        ],
         _ => &[
             ("ctrl+s", "save"),
             ("tab", "next field"),
-            ("ctrl+t", "tags"),
             ("ctrl+p", "preview"),
             ("esc", "cancel"),
         ],
@@ -704,8 +633,6 @@ mod tests {
         assert_eq!(editor.field, Field::Title);
         editor.next_field(true);
         assert_eq!(editor.field, Field::Body);
-        editor.next_field(true);
-        assert_eq!(editor.field, Field::Tags);
         editor.next_field(true);
         assert_eq!(editor.field, Field::Title);
     }
