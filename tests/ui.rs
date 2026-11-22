@@ -1,6 +1,7 @@
 use quicknotes::app::App;
 use quicknotes::config::Config;
 use quicknotes::db::{Database, NewItem};
+use quicknotes::event::Action;
 use quicknotes::ui::theme::Theme;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
@@ -72,4 +73,66 @@ fn empty_section_shows_a_hint() {
 
     let text = render(&app, 120, 32);
     assert!(text.contains("Nothing here yet"));
+}
+
+#[test]
+fn editor_overlay_shows_fields_and_hints() {
+    let mut app = build_app();
+    app.set_area(Rect::new(0, 0, 120, 32));
+
+    app.update(Action::New).unwrap();
+    let text = render(&app, 120, 32);
+
+    assert!(text.contains("NEW NOTE"));
+    assert!(text.contains("TITLE"));
+    assert!(text.contains("BODY"));
+    assert!(text.contains("ctrl+s"));
+    assert!(text.contains("cancel"));
+}
+
+#[test]
+fn split_preview_renders_markdown() {
+    let mut app = build_app();
+    app.set_area(Rect::new(0, 0, 120, 32));
+
+    app.update(Action::New).unwrap();
+    app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ))
+    .unwrap();
+
+    let text = render(&app, 120, 32);
+    assert!(text.contains("PREVIEW"));
+    assert!(text.contains("TITLE"));
+}
+
+#[test]
+fn preview_renders_markdown_instead_of_raw_text() {
+    let mut db = Database::open_in_memory().unwrap();
+    db.insert_item(&NewItem::note("Async runtime").body("# Heading\n\nsome **bold** text"))
+        .unwrap();
+
+    let config = Config::default();
+    let theme = Theme::from_config(&config);
+    let mut app = App::new(config, theme, db).unwrap();
+    app.set_area(Rect::new(0, 0, 120, 32));
+
+    let text = render(&app, 120, 32);
+
+    assert!(text.contains("Heading"));
+    assert!(!text.contains("# Heading"));
+    assert!(text.contains("bold"));
+}
+
+#[test]
+fn delete_asks_for_confirmation() {
+    let mut app = build_app();
+    app.set_area(Rect::new(0, 0, 120, 32));
+
+    app.update(Action::Delete).unwrap();
+    let text = render(&app, 120, 32);
+
+    assert!(text.contains("Delete"));
+    assert!(text.contains("y confirm"));
 }

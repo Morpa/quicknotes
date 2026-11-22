@@ -12,9 +12,9 @@ quicknotes 0.1.0
 
 ## Status
 
-Phase 2 complete: the TUI shell with a three-pane layout, section sidebar,
-navigable list, preview and status line. Items are still read-only — creating
-and editing arrives in phase 3.
+Phase 3 complete: create, edit and delete notes, todos and snippets through an
+editor overlay, with markdown preview, a split live preview and idle autosave.
+Todo interactions, snippet highlighting and tags arrive in phase 4.
 
 ## Build and run
 
@@ -39,8 +39,29 @@ cargo build --release
 | `Tab` / `Shift+Tab` | next / previous section |
 | `Home` / `End` | first / last item |
 | `PageUp` / `PageDown` | jump a page |
+| `Enter`, `e` | edit the selected item |
+| `n` | new item in the active section |
+| `Delete` | delete the selected item (asks for confirmation) |
 | `r` | reload from the database |
 | `q`, `Esc`, `Ctrl+C` | quit |
+
+Inside the editor:
+
+| Key | Action |
+|---|---|
+| `Ctrl+S` | save and close |
+| `Esc` | cancel (confirmation when there are unsaved changes) |
+| `Tab` / `Shift+Tab` | next / previous field (`Tab` indents inside the body) |
+| `Enter` | next field from title/language; newline in the body |
+| `Ctrl+P` | toggle the live markdown preview |
+
+The editor autosaves after 1.2 seconds of inactivity once the title is not
+empty, so a crash or a closed terminal does not lose the draft. Cancelling an
+autosaved edit restores the previous version; cancelling an autosaved new item
+removes it.
+
+Notes and todos are rendered as markdown in the preview; snippets stay
+verbatim until the Kanagawa syntax theme lands in phase 4.
 
 The sidebar hides below 56 columns and the preview below 78, so narrow
 terminals stay usable.
@@ -80,7 +101,7 @@ terminals without truecolor.
 |---|---|
 | 1 | Config, SQLite + FTS5, Kanagawa theme ✅ |
 | 2 | TUI shell: event loop, three-pane layout, navigation ✅ |
-| 3 | Create/edit/delete with editor overlay and markdown preview |
+| 3 | Create/edit/delete, editor overlay, markdown preview, autosave ✅ |
 | 4 | Todo interactions, snippet highlighting, tags |
 | 5 | Incremental search and command palette |
 | 6 | `qn doctor`, CLI, markdown export, polish |

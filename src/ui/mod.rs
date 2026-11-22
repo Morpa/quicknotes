@@ -3,16 +3,18 @@
 use chrono::{DateTime, Local};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Rect};
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 
-use crate::app::{App, Pane, Tone};
+use crate::app::{App, Mode, Pane, Tone};
 use crate::db::{Item, Kind};
+use crate::markdown;
 use crate::ui::layout::FrameLayout;
 use crate::ui::theme::Theme;
 use crate::ui::widgets::{display_width, due_label, relative_time, truncate};
 
+pub mod editor;
 pub mod layout;
 pub mod theme;
 pub mod widgets;
@@ -41,6 +43,14 @@ pub fn draw(frame: &mut Frame, app: &App) {
     }
 
     render_footer(frame, frame_layout.footer, app);
+
+    if let Some(editor) = &app.editor
+        && matches!(app.mode, Mode::Edit | Mode::ConfirmDiscard)
+    {
+        editor::draw(frame, frame.area(), editor, &app.theme);
+    }
+
+    render_confirm(frame, app);
 }
 
 fn render_header(frame: &mut Frame, layout: &FrameLayout, app: &App) {
@@ -279,19 +289,19 @@ fn item_line(
 fn item_meta(item: &Item, now: DateTime<Local>) -> (String, Tone) {
     let today = now.date_naive();
 
-    if item.kind == Kind::Todo {
-        if let Some(due) = item.due {
-            let tone = if item.done {
-                Tone::Normal
-            } else if due < today {
-                Tone::Danger
-            } else if (due - today).num_days() <= 1 {
-                Tone::Warning
-            } else {
-                Tone::Normal
-            };
-            return (due_label(due, today), tone);
-        }
+    if item.kind == Kind::Todo
+        && let Some(due) = item.due
+    {
+        let tone = if item.done {
+            Tone::Normal
+        } else if due < today {
+            Tone::Danger
+        } else if (due - today).num_days() <= 1 {
+            Tone::Warning
+        } else {
+            Tone::Normal
+        };
+        return (due_label(due, today), tone);
     }
 
     (relative_time(item.updated_at, now), Tone::Normal)
@@ -361,20 +371,20 @@ fn render_preview(frame: &mut Frame, layout: &FrameLayout, app: &App) {
         return;
     }
 
-    let empty = item.body.trim().is_empty();
-    let body = if empty {
-        "(no content yet)".to_string()
-    } else {
-        item.body.clone()
-    };
-    let style = if empty {
-        app.theme.faint()
-    } else {
-        app.theme.text()
-    };
     let scroll = app.preview_scroll.min(u16::MAX as usize) as u16;
 
-    let mut paragraph = Paragraph::new(body).style(style).scroll((scroll, 0));
+    if item.body.trim().is_empty() {
+        frame.render_widget(
+            Paragraph::new(Span::styled("(no content yet)", app.theme.faint())),
+            body_rect,
+        );
+        return;
+    }
+
+    let text = markdown::render(&item.body, item.kind, &app.theme, body_rect.width);
+    let mut paragraph = Paragraph::new(text)
+        .style(app.theme.text())
+        .scroll((scroll, 0));
     if item.kind != Kind::Snippet {
         paragraph = paragraph.wrap(Wrap { trim: false });
     }
@@ -455,27 +465,82 @@ fn render_footer(frame: &mut Frame, rect: Rect, app: &App) {
     }
 }
 
+fn render_confirm(frame: &mut Frame, app: &App) {
+    let (title, detail, style) = match app.mode {
+        Mode::ConfirmDelete => {
+            let Some(pending) = &app.pending_delete else {
+                return;
+            };
+            (
+                format!("Delete “{}”?", pending.title),
+                "y confirm · n cancel",
+                app.theme.danger(),
+            )
+        }
+        Mode::ConfirmDiscard => (
+            "Discard changes?".to_string(),
+            "y discard · n keep editing",
+            app.theme.warning(),
+        ),
+        Mode::Normal | Mode::Edit => return,
+    };
+
+    let area = frame.area();
+    let width = area.width.saturating_sub(4).min(64).max(area.width.min(24));
+    let height = area.height.min(5);
+    if width == 0 || height == 0 {
+        return;
+    }
+
+    let popup = Rect {
+        x: area.x + area.width.saturating_sub(width) / 2,
+        y: area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    };
+
+    frame.render_widget(Clear, popup);
+    let block = Block::new()
+        .borders(Borders::ALL)
+        .border_style(style)
+        .style(Style::default().bg(app.theme.surface));
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    let lines = vec![
+        Line::from(Span::styled(
+            truncate(&title, inner.width as usize),
+            style.add_modifier(Modifier::BOLD),
+        )),
+        Line::default(),
+        Line::from(Span::styled(detail, app.theme.dimmed())),
+    ];
+    frame.render_widget(Paragraph::new(lines), inner);
+}
+
 fn hints_line(focus: Pane, theme: &Theme) -> Line<'static> {
     let pairs: &'static [(&'static str, &'static str)] = match focus {
         Pane::Sidebar => &[
             ("↑↓", "section"),
             ("→", "list"),
-            ("tab", "section"),
-            ("r", "refresh"),
+            ("n", "new"),
             ("q", "quit"),
         ],
         Pane::List => &[
             ("↑↓", "move"),
             ("←→", "pane"),
             ("tab", "section"),
-            ("r", "refresh"),
+            ("n", "new"),
+            ("e", "edit"),
+            ("del", "delete"),
             ("q", "quit"),
         ],
         Pane::Preview => &[
             ("↑↓", "scroll"),
             ("←→", "pane"),
-            ("tab", "section"),
-            ("r", "refresh"),
+            ("n", "new"),
+            ("e", "edit"),
+            ("del", "delete"),
             ("q", "quit"),
         ],
     };

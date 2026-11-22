@@ -3,22 +3,35 @@
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::Rect;
 use ratatui::widgets::{Paragraph, Wrap};
 
 use crate::config::{Config, Icons};
-use crate::db::{Database, Item, ItemQuery, Kind, Stats};
-use crate::event::Action;
+use crate::db::{Database, Item, ItemQuery, Kind, NewItem, Stats};
+use crate::event::{self, Action};
+use crate::markdown;
+use crate::ui::editor::{Editor, Field};
 use crate::ui::layout::{self, Visibility};
 use crate::ui::theme::Theme;
 
 pub const STATUS_TTL: Duration = Duration::from_secs(4);
+/// Idle time before the editor silently persists its buffers.
+pub const AUTOSAVE_DELAY: Duration = Duration::from_millis(1_200);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pane {
     Sidebar,
     List,
     Preview,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    Normal,
+    Edit,
+    ConfirmDelete,
+    ConfirmDiscard,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,6 +59,19 @@ impl Status {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct PendingDelete {
+    pub id: i64,
+    pub title: String,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Select {
+    Keep,
+    First,
+    Id(i64),
+}
+
 pub struct App {
     pub config: Config,
     pub theme: Theme,
@@ -66,6 +92,9 @@ pub struct App {
     pub preview_max_scroll: usize,
     pub preview_width: u16,
     pub preview_height: usize,
+    pub mode: Mode,
+    pub editor: Option<Editor>,
+    pub pending_delete: Option<PendingDelete>,
 }
 
 impl App {
@@ -98,9 +127,26 @@ impl App {
             preview_max_scroll: 0,
             preview_width: 0,
             preview_height: 0,
+            mode: Mode::Normal,
+            editor: None,
+            pending_delete: None,
         };
         app.ensure_visible();
         Ok(app)
+    }
+
+    /// Dispatches a raw key press according to the active mode.
+    pub fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
+        match self.mode {
+            Mode::Normal => {
+                if let Some(action) = event::map_key(key) {
+                    self.update(action)?;
+                }
+            }
+            Mode::Edit => self.handle_editor_key(key)?,
+            Mode::ConfirmDelete | Mode::ConfirmDiscard => self.handle_confirm_key(key)?,
+        }
+        Ok(())
     }
 
     pub fn update(&mut self, action: Action) -> Result<()> {
@@ -123,6 +169,9 @@ impl App {
             Action::PageUp => self.page(true)?,
             Action::PageDown => self.page(false)?,
             Action::Refresh => self.refresh()?,
+            Action::New => self.open_new_editor(),
+            Action::Edit => self.open_selected_editor(),
+            Action::Delete => self.request_delete(),
         }
         Ok(())
     }
@@ -149,6 +198,8 @@ impl App {
         {
             self.status = None;
         }
+
+        self.try_autosave();
     }
 
     pub fn set_status(&mut self, text: impl Into<String>, tone: Tone) {
@@ -203,23 +254,239 @@ impl App {
         }
     }
 
-    fn load(&mut self) -> Result<()> {
-        self.stats = self.db.stats()?;
-        self.tags = self.db.all_tags()?;
-        self.items = self.db.list_items(&ItemQuery {
-            kind: Some(self.section),
-            ..ItemQuery::default()
-        })?;
-
-        if self.selected >= self.items.len() {
-            self.selected = self.items.len().saturating_sub(1);
+    fn handle_editor_key(&mut self, key: KeyEvent) -> Result<()> {
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            match key.code {
+                KeyCode::Char('s') => return self.save_editor(false),
+                KeyCode::Char('p') => {
+                    if let Some(editor) = &mut self.editor {
+                        editor.split = !editor.split;
+                    }
+                    return Ok(());
+                }
+                _ => {}
+            }
         }
-        self.ensure_visible();
-        self.refresh_preview_bounds();
+
+        let mut cancel = false;
+        let mut changed = false;
+
+        if let Some(editor) = &mut self.editor {
+            match key.code {
+                KeyCode::Esc => cancel = true,
+                KeyCode::Tab if editor.field == Field::Body => changed = editor.input(key),
+                KeyCode::Tab => editor.next_field(true),
+                KeyCode::BackTab => editor.next_field(false),
+                KeyCode::Enter if editor.field != Field::Body => editor.next_field(true),
+                _ => changed = editor.input(key),
+            }
+
+            if changed {
+                editor.dirty = true;
+                editor.last_edit = Instant::now();
+                editor.error = None;
+            }
+        }
+
+        if cancel {
+            self.request_cancel();
+        }
         Ok(())
     }
 
-    fn refresh(&mut self) -> Result<()> {
+    fn handle_confirm_key(&mut self, key: KeyEvent) -> Result<()> {
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            self.cancel_confirm();
+            return Ok(());
+        }
+
+        match key.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => match self.mode {
+                Mode::ConfirmDelete => self.confirm_delete()?,
+                Mode::ConfirmDiscard => self.discard_editor()?,
+                Mode::Normal | Mode::Edit => {}
+            },
+            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc | KeyCode::Char('q') => {
+                self.cancel_confirm();
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn open_new_editor(&mut self) {
+        self.editor = Some(Editor::new(self.section, None, &self.theme));
+        self.mode = Mode::Edit;
+    }
+
+    fn open_selected_editor(&mut self) {
+        let item = self.selected_item().cloned();
+        let kind = item.as_ref().map_or(self.section, |item| item.kind);
+        self.editor = Some(Editor::new(kind, item.as_ref(), &self.theme));
+        self.mode = Mode::Edit;
+    }
+
+    fn request_cancel(&mut self) {
+        let modified = self.editor.as_ref().is_some_and(Editor::is_modified);
+        if modified {
+            self.mode = Mode::ConfirmDiscard;
+        } else {
+            self.editor = None;
+            self.mode = Mode::Normal;
+        }
+    }
+
+    fn request_delete(&mut self) {
+        match self.selected_item() {
+            Some(item) => {
+                self.pending_delete = Some(PendingDelete {
+                    id: item.id,
+                    title: item.title.clone(),
+                });
+                self.mode = Mode::ConfirmDelete;
+            }
+            None => self.set_status("Nothing to delete", Tone::Warning),
+        }
+    }
+
+    fn confirm_delete(&mut self) -> Result<()> {
+        let Some(pending) = self.pending_delete.take() else {
+            self.mode = Mode::Normal;
+            return Ok(());
+        };
+
+        let deleted = self.db.delete_item(pending.id)?;
+        self.mode = Mode::Normal;
+        self.reload(Select::Keep)?;
+
+        if deleted {
+            self.set_status(format!("Deleted · {}", pending.title), Tone::Success);
+        }
+        Ok(())
+    }
+
+    fn cancel_confirm(&mut self) {
+        self.pending_delete = None;
+        self.mode = if self.editor.is_some() {
+            Mode::Edit
+        } else {
+            Mode::Normal
+        };
+    }
+
+    fn discard_editor(&mut self) -> Result<()> {
+        let Some(editor) = self.editor.take() else {
+            self.mode = Mode::Normal;
+            return Ok(());
+        };
+        self.mode = Mode::Normal;
+
+        if editor.is_modified() {
+            match &editor.baseline {
+                Some(baseline) => self.db.update_item(baseline)?,
+                None => {
+                    if let Some(id) = editor.item_id {
+                        self.db.delete_item(id)?;
+                    }
+                }
+            }
+        }
+
+        self.reload(Select::Keep)?;
+        self.set_status("Changes discarded", Tone::Normal);
+        Ok(())
+    }
+
+    /// Saves the editor buffers. Autosave keeps the editor open; an explicit
+    /// save closes it and selects the saved row.
+    fn save_editor(&mut self, autosave: bool) -> Result<()> {
+        let Some(editor) = self.editor.as_ref() else {
+            return Ok(());
+        };
+
+        let title = editor.title_text().trim().to_string();
+        if title.is_empty() {
+            if autosave {
+                return Ok(());
+            }
+            if let Some(editor) = &mut self.editor {
+                editor.error = Some("Title cannot be empty".to_string());
+            }
+            return Ok(());
+        }
+
+        let body = editor.body_text();
+        let language = if editor.kind == Kind::Snippet {
+            editor.normalized_language()
+        } else {
+            None
+        };
+        let kind = editor.kind;
+        let item_id = editor.item_id;
+
+        let saved = match item_id {
+            Some(id) => {
+                let Some(mut item) = self.db.get_item(id)? else {
+                    anyhow::bail!("item {id} no longer exists");
+                };
+                item.title = title;
+                item.body = body;
+                item.language = language;
+                self.db.update_item(&item)?;
+                item
+            }
+            None => self.db.insert_item(&NewItem {
+                kind,
+                title,
+                body,
+                language,
+                due: None,
+                priority: 0,
+                tags: Vec::new(),
+            })?,
+        };
+
+        if let Some(editor) = &mut self.editor {
+            editor.item_id = Some(saved.id);
+            editor.dirty = false;
+            editor.error = None;
+        }
+
+        if autosave {
+            return Ok(());
+        }
+
+        self.mode = Mode::Normal;
+        self.editor = None;
+        self.reload(Select::Id(saved.id))?;
+        self.set_status(format!("Saved · {}", saved.title), Tone::Success);
+        Ok(())
+    }
+
+    fn try_autosave(&mut self) {
+        if self.mode != Mode::Edit {
+            return;
+        }
+
+        let Some(editor) = self.editor.as_ref() else {
+            return;
+        };
+        if !editor.dirty || editor.last_edit.elapsed() < AUTOSAVE_DELAY {
+            return;
+        }
+        if editor.title_text().trim().is_empty() {
+            return;
+        }
+
+        if let Err(error) = self.save_editor(true) {
+            tracing::warn!(error = %format!("{error:#}"), "autosave failed");
+            if let Some(editor) = &mut self.editor {
+                editor.last_edit = Instant::now();
+            }
+        }
+    }
+
+    fn reload(&mut self, select: Select) -> Result<()> {
         let previous = self.selected_item().map(|item| item.id);
 
         self.stats = self.db.stats()?;
@@ -229,17 +496,26 @@ impl App {
             ..ItemQuery::default()
         })?;
 
-        if let Some(id) = previous
-            && let Some(index) = self.items.iter().position(|item| item.id == id)
-        {
-            self.selected = index;
-        }
-        if self.selected >= self.items.len() {
-            self.selected = self.items.len().saturating_sub(1);
-        }
+        self.selected = match select {
+            Select::First => 0,
+            Select::Keep => previous
+                .and_then(|id| self.items.iter().position(|item| item.id == id))
+                .unwrap_or(self.selected),
+            Select::Id(id) => self
+                .items
+                .iter()
+                .position(|item| item.id == id)
+                .unwrap_or(0),
+        };
+        self.selected = self.selected.min(self.items.len().saturating_sub(1));
 
         self.ensure_visible();
         self.refresh_preview_bounds();
+        Ok(())
+    }
+
+    fn refresh(&mut self) -> Result<()> {
+        self.reload(Select::Keep)?;
         self.set_status(format!("Refreshed · {}", self.items.len()), Tone::Success);
         Ok(())
     }
@@ -250,10 +526,9 @@ impl App {
         }
 
         self.section = section;
-        self.selected = 0;
         self.list_offset = 0;
         self.preview_scroll = 0;
-        self.load()
+        self.reload(Select::First)
     }
 
     fn move_up(&mut self) -> Result<()> {
@@ -408,10 +683,11 @@ impl App {
 
         let lines = match self.selected_item() {
             Some(item) => {
+                let text = markdown::render(&item.body, item.kind, &self.theme, self.preview_width);
                 let paragraph = if item.kind == Kind::Snippet {
-                    Paragraph::new(item.body.as_str())
+                    Paragraph::new(text)
                 } else {
-                    Paragraph::new(item.body.as_str()).wrap(Wrap { trim: false })
+                    Paragraph::new(text).wrap(Wrap { trim: false })
                 };
                 paragraph.line_count(self.preview_width)
             }

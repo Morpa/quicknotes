@@ -31,16 +31,22 @@ pub fn run(mut app: App) -> Result<()> {
 }
 
 fn run_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut App) -> Result<()> {
+    let mut area = Rect::default();
+
     while !app.should_quit {
         let size = terminal.size().context("reading terminal size")?;
-        app.set_area(Rect::new(0, 0, size.width, size.height));
+        let current = Rect::new(0, 0, size.width, size.height);
+        if current != area {
+            area = current;
+            app.set_area(current);
+        }
 
         terminal
             .draw(|frame| ui::draw(frame, app))
             .context("drawing the interface")?;
 
-        if let Some(action) = event::next_action(TICK)? {
-            app.update(action)?;
+        if let Some(key) = event::next_key(TICK)? {
+            app.handle_key(key)?;
         } else {
             app.tick();
         }

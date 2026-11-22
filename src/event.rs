@@ -21,29 +21,39 @@ pub enum Action {
     PageUp,
     PageDown,
     Refresh,
+    New,
+    Edit,
+    Delete,
 }
 
 /// Waits up to `timeout` for a key press. Returns `None` on tick or on events
-/// that do not map to an action (resize, focus, mouse, key release).
-pub fn next_action(timeout: Duration) -> Result<Option<Action>> {
+/// that are not key presses (resize, focus, mouse, key release).
+pub fn next_key(timeout: Duration) -> Result<Option<KeyEvent>> {
     if !crossterm_event::poll(timeout)? {
         return Ok(None);
     }
 
     let event = crossterm_event::read()?;
     Ok(match event {
-        Event::Key(key) if key.kind == KeyEventKind::Press => map_key(key),
+        Event::Key(key) if key.kind == KeyEventKind::Press => Some(key),
         _ => None,
     })
 }
 
-fn map_key(key: KeyEvent) -> Option<Action> {
-    if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-        return Some(Action::Quit);
+/// Maps a key press to an action in the normal (non-editor) mode.
+pub fn map_key(key: KeyEvent) -> Option<Action> {
+    if key.modifiers.contains(KeyModifiers::CONTROL) {
+        return match key.code {
+            KeyCode::Char('c') => Some(Action::Quit),
+            _ => None,
+        };
     }
 
     match key.code {
         KeyCode::Char('q') | KeyCode::Esc => Some(Action::Quit),
+        KeyCode::Char('n') => Some(Action::New),
+        KeyCode::Char('e') | KeyCode::Enter => Some(Action::Edit),
+        KeyCode::Delete => Some(Action::Delete),
         KeyCode::Tab => Some(Action::NextSection),
         KeyCode::BackTab => Some(Action::PrevSection),
         KeyCode::Up => Some(Action::Up),

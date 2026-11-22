@@ -50,10 +50,10 @@ pub fn database_file(config: &Config) -> Result<PathBuf> {
 
 /// Expands a leading `~` to the user's home directory.
 pub fn expand_tilde(path: &Path) -> PathBuf {
-    if let Ok(rest) = path.strip_prefix("~") {
-        if let Some(home) = std::env::var_os("HOME") {
-            return PathBuf::from(home).join(rest);
-        }
+    if let Ok(rest) = path.strip_prefix("~")
+        && let Some(home) = std::env::var_os("HOME")
+    {
+        return PathBuf::from(home).join(rest);
     }
     path.to_path_buf()
 }

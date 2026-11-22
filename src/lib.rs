@@ -5,6 +5,7 @@ pub mod config;
 pub mod db;
 pub mod event;
 pub mod logging;
+pub mod markdown;
 pub mod paths;
 pub mod tui;
 pub mod ui;

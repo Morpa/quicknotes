@@ -241,6 +241,10 @@ impl Theme {
         Style::default().fg(self.tag)
     }
 
+    pub fn violet(&self) -> Style {
+        Style::default().fg(self.violet)
+    }
+
     pub fn success(&self) -> Style {
         Style::default().fg(self.success)
     }
