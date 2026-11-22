@@ -1,0 +1,24 @@
+ QUICKNOTES
+────────────────────────────────────────────────────────────────────────────────────────────────────
+▎ NOTES           2 │ NOTES · 1 with #rust · /async          │ Async runtime
+  TODOS           2 │                                        │ NOTE ·  #async   #rust  · now
+  SNIPPETS        1 │▎   Async runtime                    now│ ────────────────────────────────────
+                    │                                        │ Tokio
+ TAGS               │                                        │
+  #async         1  │                                        │ A multi-threaded runtime.
+  #docs          1  │                                        │
+  #home          1  │                                        │ - tasks
+● #rust          2  │                                        │ - timers
+                    │                                        │ - io
+                    │                                        │
+                    │                                        │
+                    │                                        │
+                    │                                        │
+                    │                                        │
+                    │                                        │
+                    │                                        │
+                    │                                        │
+                    │                                        │
+                    │                                        │
+────────────────────────────────────────────────────────────────────────────────────────────────────
+ / async▏   enter keep · esc clear                                                Filter · #rust · 1

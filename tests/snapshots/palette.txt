@@ -1,0 +1,24 @@
+ QUICKNOTES
+────────────────────────────────────────────────────────────────────────────────────────────────────
+▎ NOTES           2 │ NOTES · 2                              │ Groceries
+  TODOS           2 │                                        │ NOTE ·  #home  · now
+  SNIPPETS        1 │▎   Groceries                        now│ ────────────────────────────────────
+                    │    Async runtime                    now│ milk, eggs
+ TAGS               │                                        │
+  #async         1  │  ┌ COMMANDS ──────────────────────────────────────────┐
+  #docs          1  │  │ › go                                               │
+  #home          1  │  │ ────────────────────────────────────────────────── │
+  #rust          2  │  │  Go to notes                                  tab  │
+                    │  │  Go to todos                                  tab  │
+                    │  │  Go to snippets                               tab  │
+                    │  │  Cycle theme (wave, dragon, lotus)              T  │
+                    │  │ enter run  esc close                               │
+                    │  └────────────────────────────────────────────────────┘
+                    │                                        │
+                    │                                        │
+                    │                                        │
+                    │                                        │
+                    │                                        │
+                    │                                        │
+────────────────────────────────────────────────────────────────────────────────────────────────────
+ ↑↓ move  n new  e edit  / search  t tags  s sort  ? help  q quit                                1/2

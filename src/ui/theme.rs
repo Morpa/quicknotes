@@ -115,8 +115,8 @@ const LOTUS: RawPalette = RawPalette {
 };
 
 fn palette(name: ThemeName) -> &'static RawPalette {
-    match name {
-        ThemeName::Wave => &WAVE,
+    match name.resolved() {
+        ThemeName::Wave | ThemeName::Auto => &WAVE,
         ThemeName::Dragon => &DRAGON,
         ThemeName::Lotus => &LOTUS,
     }
@@ -445,6 +445,52 @@ mod tests {
         assert_eq!(nearest_ansi256(Rgb(255, 255, 255)), 231);
         assert_eq!(nearest_ansi256(Rgb(128, 128, 128)), 244);
         assert_eq!(nearest_ansi256(Rgb(255, 0, 0)), 196);
+    }
+
+    fn channel(value: u8) -> f64 {
+        let value = f64::from(value) / 255.0;
+        if value <= 0.03928 {
+            value / 12.92
+        } else {
+            ((value + 0.055) / 1.055).powf(2.4)
+        }
+    }
+
+    fn contrast(a: Rgb, b: Rgb) -> f64 {
+        let lum = |c: Rgb| 0.2126 * channel(c.0) + 0.7152 * channel(c.1) + 0.0722 * channel(c.2);
+        let (hi, lo) = (lum(a).max(lum(b)), lum(a).min(lum(b)));
+        (hi + 0.05) / (lo + 0.05)
+    }
+
+    #[test]
+    fn every_variant_keeps_text_and_roles_readable() {
+        for name in [ThemeName::Wave, ThemeName::Dragon, ThemeName::Lotus] {
+            let raw = palette(name);
+            assert!(contrast(raw.fg, raw.bg) >= 4.5, "{name:?} body text");
+            assert!(
+                contrast(raw.sel_fg, raw.sel_bg) >= 4.5,
+                "{name:?} selection"
+            );
+            for (role, color) in [
+                ("blue", raw.blue),
+                ("green", raw.green),
+                ("red", raw.red),
+                ("orange", raw.orange),
+                ("violet", raw.violet),
+            ] {
+                assert!(contrast(color, raw.bg) >= 3.0, "{name:?} {role}");
+            }
+        }
+    }
+
+    #[test]
+    fn variants_define_distinct_palettes_and_syntax_colors() {
+        let wave = syntax_palette(ThemeName::Wave);
+        let dragon = syntax_palette(ThemeName::Dragon);
+        let lotus = syntax_palette(ThemeName::Lotus);
+        assert_ne!(wave, dragon);
+        assert_ne!(dragon, lotus);
+        assert_eq!(syntax_palette(ThemeName::Auto), wave);
     }
 
     #[test]

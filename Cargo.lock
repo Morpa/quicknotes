@@ -1447,6 +1447,7 @@ dependencies = [
  "chrono",
  "crossterm",
  "directories",
+ "libc",
  "ratatui",
  "ratatui-textarea",
  "rusqlite",

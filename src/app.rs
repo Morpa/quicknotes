@@ -214,6 +214,7 @@ impl App {
             Action::CyclePriority => self.cycle_priority()?,
             Action::CycleSort => self.cycle_sort()?,
             Action::Copy => self.copy_selected(),
+            Action::CycleTheme => self.cycle_theme(),
             Action::PickTags => self.open_tag_picker(false),
             Action::FilterTags => self.open_tag_picker(true),
             Action::Search => self.mode = Mode::Search,
@@ -779,6 +780,7 @@ impl App {
             Command::ToggleDone => self.update(Action::ToggleDone),
             Command::CyclePriority => self.update(Action::CyclePriority),
             Command::CycleSort => self.update(Action::CycleSort),
+            Command::CycleTheme => self.update(Action::CycleTheme),
             Command::Copy => self.update(Action::Copy),
             Command::TagItem => self.update(Action::PickTags),
             Command::FilterTag => self.update(Action::FilterTags),
@@ -853,6 +855,15 @@ impl App {
         self.reload(Select::Keep)?;
         self.set_status(format!("Sort · {}", self.sort.label()), Tone::Normal);
         Ok(())
+    }
+
+    /// Switches Wave → Dragon → Lotus for this session; `config.toml` is the
+    /// place to make it permanent.
+    fn cycle_theme(&mut self) {
+        self.config.theme = self.theme.name.next();
+        self.theme = Theme::from_config(&self.config);
+        self.refresh_preview_bounds();
+        self.set_status(format!("Theme · {}", self.theme.name), Tone::Normal);
     }
 
     fn copy_selected(&mut self) {

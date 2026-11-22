@@ -1,38 +1,120 @@
 # quicknotes
 
-Minimal terminal notes, todos and code snippets — local-first, no accounts, no network.
+Minimal terminal notes, todos and code snippets — local-first, no accounts, no
+network. One `qn` binary, one SQLite file, Kanagawa colors.
 
 ```
-quicknotes 0.1.0
-  config    ~/Library/Application Support/dev.andremorpa.quicknotes/config.toml
-  database  ~/Library/Application Support/dev.andremorpa.quicknotes/quicknotes.db
-  theme     Kanagawa Wave · terminal · crystalBlue
-  items     0 notes · 0 open todos · 0 done · 0 snippets
+▎ NOTES           2 │ NOTES · 2                              │ Groceries
+  TODOS           2 │                                        │ NOTE ·  #home  · now
+  SNIPPETS        1 │▎   Groceries                        now│ ────────────────────────────────────
+                    │    Async runtime                    now│ milk, eggs
+ TAGS               │                                        │
+  #async         1  │                                        │
+  #docs          1  │                                        │
+  #home          1  │                                        │
+  #rust          2  │                                        │
+────────────────────────────────────────────────────────────────────────────────────────────────────
+ ↑↓ move  n new  e edit  / search  t tags  s sort  ? help  q quit                                1/2
 ```
 
-## Status
+<details>
+<summary>More screens</summary>
 
-Phase 5 complete: incremental full-text search, a fuzzy command palette and a
-help overlay on top of phase 4's todos, highlighting and tags.
+Todos with priority and completed items:
 
-Phase 4 added: todos can be completed, prioritized and given a due date;
-snippets are syntax-highlighted with the active Kanagawa palette and copied to
-the clipboard; items carry tags, with a picker, chips and a sidebar filter.
+```
+  NOTES           2 │ TODOS · 2 open · 1 done                │ Write the README
+▎ TODOS           2 │                                        │ TODO · high priority ·  #docs  · now
+  SNIPPETS        1 │▎   [ ] Write the README          !! now│ ────────────────────────────────────
+                    │    [ ] Review PR                    now│ (no content yet)
+ TAGS               │    [x] Ship phase 4                 now│
+  #async         1  │                                        │
+  #docs          1  │                                        │
+  #home          1  │                                        │
+  #rust          2  │                                        │
+────────────────────────────────────────────────────────────────────────────────────────────────────
+ ↑↓ move  n new  e edit  space done  / search  t tags  s sort  ? help  q quit                    1/3
+```
 
+Snippet preview (syntax colors are not visible in plain text):
 
-## Build and run
+```
+  NOTES           2 │ SNIPPETS · 1                           │ Entry API
+  TODOS           2 │                                        │ SNIPPET · rust ·  #rust  · now
+▎ SNIPPETS        1 │▎   Entry API                        now│ ────────────────────────────────────
+                    │                                        │ let count = map.entry(key).or_insert
+ TAGS               │                                        │ *count += 1;
+  #async         1  │                                        │
+  #docs          1  │                                        │
+  #home          1  │                                        │
+  #rust          2  │                                        │
+────────────────────────────────────────────────────────────────────────────────────────────────────
+ ↑↓ move  n new  e edit  y copy  / search  t tags  s sort  ? help  q quit                        1/1
+```
+
+Command palette:
+
+```
+▎ NOTES           2 │ NOTES · 2                              │ Groceries
+  TODOS           2 │                                        │ NOTE ·  #home  · now
+  SNIPPETS        1 │▎   Groceries                        now│ ────────────────────────────────────
+                    │    Async runtime                    now│ milk, eggs
+ TAGS               │                                        │
+  #async         1  │  ┌ COMMANDS ──────────────────────────────────────────┐
+  #docs          1  │  │ › go                                               │
+  #home          1  │  │ ────────────────────────────────────────────────── │
+  #rust          2  │  │  Go to notes                                  tab  │
+                    │  │  Go to todos                                  tab  │
+                    │  │  Go to snippets                               tab  │
+                    │  │  Cycle theme (wave, dragon, lotus)              T  │
+                    │  │ enter run  esc close                               │
+                    │  └────────────────────────────────────────────────────┘
+────────────────────────────────────────────────────────────────────────────────────────────────────
+ ↑↓ move  n new  e edit  / search  t tags  s sort  ? help  q quit                                1/2
+```
+
+</details>
+
+These screens are rendered by the test suite (`tests/snapshots.rs`, ratatui's
+`TestBackend`) with ASCII icons, so they are exact but carry no colors. They are
+regenerated with `UPDATE_SNAPSHOTS=1 cargo test --test snapshots`.
+
+## Install
+
+Requires Rust 1.88 or newer.
 
 ```sh
-cargo run          # opens the TUI (or prints a summary when piped)
-cargo test
+git clone <repository-url> quicknotes && cd quicknotes
+cargo install --path . --locked      # installs `qn` into ~/.cargo/bin
 ```
 
-The binary is named `qn`:
+or build in place:
 
 ```sh
 cargo build --release
 ./target/release/qn
 ```
+
+Prebuilt binaries and an install script arrive in phase 7. Run `qn doctor`
+after installing to check the terminal, the database and the clipboard.
+
+For the icons, set your terminal font to a Nerd Font (Iosevka Nerd Font Propo
+is the reference); with any other font use `icons = "ascii"`.
+
+## Command line
+
+| Command | What it does |
+|---|---|
+| `qn` | open the interface (prints a one-screen summary when piped) |
+| `qn doctor` | check config, database, search index, terminal, font hint and clipboard; exits 1 when something is broken |
+| `qn setup` | write the commented `config.toml` if it does not exist |
+| `qn setup --print-config` | print the default configuration to stdout |
+| `qn export [DIR \| -]` | write every item as Markdown with YAML frontmatter (`DIR` defaults to `quicknotes-export`, `-` prints to stdout) |
+| `qn export --kind todo --tag work` | export only one kind and/or one tag |
+
+Exported files are named `<kind>-<id>-<title-slug>.md`. Snippets are wrapped in
+a fenced code block tagged with their language; todos carry `done`, `due` and
+`priority` in the frontmatter.
 
 ## Keys
 
@@ -105,10 +187,10 @@ leading `#` dropped) and full-text search uses FTS5 with prefix matching.
 
 ## Configuration
 
-`config.toml` is written with comments on first run:
+`config.toml` is written with comments on first run (or by `qn setup`):
 
 ```toml
-theme       = "kanagawa-wave"   # kanagawa-wave | kanagawa-dragon | kanagawa-lotus
+theme       = "kanagawa-wave"   # kanagawa-wave | kanagawa-dragon | kanagawa-lotus | auto
 background  = "terminal"        # terminal | sumi
 accent      = "crystalBlue"     # crystalBlue | springBlue | carpYellow | sakuraPink
                                 # waveAqua1 | springGreen | surimiOrange
@@ -117,9 +199,22 @@ color_mode  = "truecolor"       # truecolor | 256
 # db_path   = "~/notes/quicknotes.db"
 ```
 
+`theme = "auto"` asks the terminal for its background color (OSC 11, then
+`COLORFGBG`) and picks Wave for dark terminals or Lotus for light ones; Wave is
+used when the terminal does not answer. `T` cycles Wave → Dragon → Lotus for the
+current session.
+
 `background = "terminal"` uses `Color::Reset`, so quicknotes blends with your
 terminal's own Kanagawa colors. `color_mode = "256"` quantizes the palette for
 terminals without truecolor.
+
+## Development
+
+```sh
+cargo test                                 # unit, integration and snapshot tests
+cargo clippy --all-targets -- -D warnings
+cargo fmt --all --check
+```
 
 ## Roadmap
 
@@ -130,9 +225,5 @@ terminals without truecolor.
 | 3 | Create/edit/delete, editor overlay, markdown preview, autosave ✅ |
 | 4 | Todo interactions, snippet highlighting, tags ✅ |
 | 5 | Incremental search and command palette ✅ |
-| 6 | `qn doctor`, CLI, markdown export, polish |
+| 6 | `qn doctor`, `setup`, `export`, themes, snapshots, polish ✅ |
 | 7 | Release: release-please, CI, binaries and `install.sh` |
-
-Font note: quicknotes uses Nerd Font glyphs but cannot change your terminal
-font. Configure **Iosevka Nerd Font Propo** in your terminal; `qn doctor`
-(phase 6) will verify it.

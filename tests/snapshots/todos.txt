@@ -1,0 +1,24 @@
+ QUICKNOTES
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  NOTES           2 │ TODOS · 2 open · 1 done                │ Write the README
+▎ TODOS           2 │                                        │ TODO · high priority ·  #docs  · now
+  SNIPPETS        1 │▎   [ ] Write the README          !! now│ ────────────────────────────────────
+                    │    [ ] Review PR                    now│ (no content yet)
+ TAGS               │    [x] Ship phase 4                 now│
+  #async         1  │                                        │
+  #docs          1  │                                        │
+  #home          1  │                                        │
+  #rust          2  │                                        │
+                    │                                        │
+                    │                                        │
+                    │                                        │
+                    │                                        │
+                    │                                        │
+                    │                                        │
+                    │                                        │
+                    │                                        │
+                    │                                        │
+                    │                                        │
+                    │                                        │
+────────────────────────────────────────────────────────────────────────────────────────────────────
+ ↑↓ move  n new  e edit  space done  / search  t tags  s sort  ? help  q quit                    1/3

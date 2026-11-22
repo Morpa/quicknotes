@@ -1,0 +1,30 @@
+ QUICKNOTES
+───────────────────┌ HELP ──────────────────────────────────────────────────────┐───────────────────
+▎ NOTES           2│ NAVIGATE                                                   │
+  TODOS           2│   ↑ ↓                 move / scroll preview                │ow
+  SNIPPETS        1│   ← →                 switch pane                          │──────────────────
+                   │   tab / shift+tab     next / previous section              │
+ TAGS              │   home end pgup pgdn  jump                                 │
+  #async         1 │                                                            │
+  #docs          1 │ ITEMS                                                      │
+  #home          1 │   n                   new item                             │
+  #rust          2 │   e / enter           edit                                 │
+                   │   del                 delete                               │
+                   │   space / x           complete todo                        │
+                   │   p                   todo priority                        │
+                   │   y                   copy body                            │
+                   │                                                            │
+                   │ FIND                                                       │
+                   │   /                   search (enter keeps it, esc clears)  │
+                   │   t / #               tag item / filter by tag             │
+                   │   s                   sort order                           │
+                   │   T                   cycle theme (this session)           │
+                   │   ctrl+k / :          command palette                      │
+                   │   esc                 clear search, then tag filter, then  │
+                   │                                                            │
+                   │ OTHER                                                      │
+                   │   r                   reload                               │
+                   │   ?                   this help                            │
+                   │   q / ctrl+c          quit                                 │
+───────────────────└────────────────────────────────────────────────────────────┘───────────────────
+ ↑↓ move  n new  e edit  / search  t tags  s sort  ? help  q quit                                1/2

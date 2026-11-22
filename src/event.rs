@@ -33,6 +33,7 @@ pub enum Action {
     PickTags,
     FilterTags,
     Search,
+    CycleTheme,
     Palette,
     Help,
 }
@@ -71,6 +72,7 @@ pub fn map_key(key: KeyEvent) -> Option<Action> {
         KeyCode::Char('t') => Some(Action::PickTags),
         KeyCode::Char('#') => Some(Action::FilterTags),
         KeyCode::Char('/') => Some(Action::Search),
+        KeyCode::Char('T') => Some(Action::CycleTheme),
         KeyCode::Char(':') => Some(Action::Palette),
         KeyCode::Char('?') => Some(Action::Help),
         KeyCode::Char('n') => Some(Action::New),

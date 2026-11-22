@@ -19,6 +19,7 @@ pub enum Command {
     ToggleDone,
     CyclePriority,
     CycleSort,
+    CycleTheme,
     Copy,
     TagItem,
     FilterTag,
@@ -31,13 +32,14 @@ pub enum Command {
 }
 
 impl Command {
-    pub const ALL: [Command; 17] = [
+    pub const ALL: [Command; 18] = [
         Self::New,
         Self::Edit,
         Self::Delete,
         Self::ToggleDone,
         Self::CyclePriority,
         Self::CycleSort,
+        Self::CycleTheme,
         Self::Copy,
         Self::TagItem,
         Self::FilterTag,
@@ -59,6 +61,7 @@ impl Command {
             Self::ToggleDone => "Complete / reopen todo",
             Self::CyclePriority => "Cycle todo priority",
             Self::CycleSort => "Cycle sort order",
+            Self::CycleTheme => "Cycle theme (wave, dragon, lotus)",
             Self::Copy => "Copy body to clipboard",
             Self::TagItem => "Tag item…",
             Self::FilterTag => "Filter by tag…",
@@ -81,6 +84,7 @@ impl Command {
             Self::ToggleDone => "space",
             Self::CyclePriority => "p",
             Self::CycleSort => "s",
+            Self::CycleTheme => "T",
             Self::Copy => "y",
             Self::TagItem => "t",
             Self::FilterTag => "#",
@@ -341,6 +345,7 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
             ("/", "search (enter keeps it, esc clears)"),
             ("t / #", "tag item / filter by tag"),
             ("s", "sort order"),
+            ("T", "cycle theme (this session)"),
             ("ctrl+k / :", "command palette"),
             ("esc", "clear search, then tag filter, then quit"),
         ],

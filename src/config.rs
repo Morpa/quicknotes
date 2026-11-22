@@ -16,7 +16,8 @@ use crate::paths;
 const CONFIG_HEADER: &str = "\
 # quicknotes configuration
 #
-# theme:       kanagawa-wave | kanagawa-dragon | kanagawa-lotus
+# theme:       kanagawa-wave | kanagawa-dragon | kanagawa-lotus | auto
+#              (auto asks the terminal for its background: dark -> wave, light -> lotus)
 # background:  terminal (blend with your terminal) | sumi (solid Kanagawa ink)
 # accent:      crystalBlue | springBlue | carpYellow | sakuraPink | waveAqua1 | springGreen | surimiOrange
 # icons:       nerd | ascii
@@ -33,6 +34,10 @@ pub enum ThemeName {
     Dragon,
     #[serde(rename = "kanagawa-lotus")]
     Lotus,
+    /// Resolved at startup from the terminal background (OSC 11); Wave when
+    /// the terminal does not answer.
+    #[serde(rename = "auto")]
+    Auto,
 }
 
 impl ThemeName {
@@ -41,15 +46,24 @@ impl ThemeName {
             Self::Wave => "kanagawa-wave",
             Self::Dragon => "kanagawa-dragon",
             Self::Lotus => "kanagawa-lotus",
+            Self::Auto => "auto",
         }
     }
 
-    /// Cycles Wave → Dragon → Lotus, useful for a future key binding.
+    /// Cycles Wave → Dragon → Lotus. `Auto` joins the cycle at Wave.
     pub const fn next(self) -> Self {
         match self {
+            Self::Auto | Self::Lotus => Self::Wave,
             Self::Wave => Self::Dragon,
             Self::Dragon => Self::Lotus,
-            Self::Lotus => Self::Wave,
+        }
+    }
+
+    /// The concrete variant; `Auto` falls back to Wave.
+    pub const fn resolved(self) -> Self {
+        match self {
+            Self::Auto => Self::Wave,
+            other => other,
         }
     }
 }
@@ -60,6 +74,7 @@ impl fmt::Display for ThemeName {
             Self::Wave => "Kanagawa Wave",
             Self::Dragon => "Kanagawa Dragon",
             Self::Lotus => "Kanagawa Lotus",
+            Self::Auto => "Kanagawa (auto)",
         };
         formatter.write_str(label)
     }
@@ -73,8 +88,9 @@ impl FromStr for ThemeName {
             "kanagawa-wave" => Ok(Self::Wave),
             "kanagawa-dragon" => Ok(Self::Dragon),
             "kanagawa-lotus" => Ok(Self::Lotus),
+            "auto" => Ok(Self::Auto),
             other => Err(format!(
-                "unknown theme `{other}` (expected kanagawa-wave, kanagawa-dragon or kanagawa-lotus)"
+                "unknown theme `{other}` (expected kanagawa-wave, kanagawa-dragon, kanagawa-lotus or auto)"
             )),
         }
     }
@@ -230,6 +246,18 @@ impl Config {
         Ok(true)
     }
 
+    /// Replaces `theme = "auto"` with Lotus (light terminal) or Wave (dark).
+    /// Other themes are left alone.
+    pub fn resolve_auto(mut self, dark_terminal: Option<bool>) -> Self {
+        if self.theme == ThemeName::Auto {
+            self.theme = match dark_terminal {
+                Some(false) => ThemeName::Lotus,
+                _ => ThemeName::Wave,
+            };
+        }
+        self
+    }
+
     pub fn to_toml(&self) -> Result<String> {
         let body = toml::to_string_pretty(self).context("serializing configuration")?;
         Ok(format!("{CONFIG_HEADER}\n{body}"))
@@ -252,6 +280,33 @@ mod tests {
         for name in [ThemeName::Wave, ThemeName::Dragon, ThemeName::Lotus] {
             assert_eq!(name.as_str().parse::<ThemeName>(), Ok(name));
         }
+    }
+
+    #[test]
+    fn auto_resolves_from_the_terminal_background() {
+        let auto = Config {
+            theme: ThemeName::Auto,
+            ..Config::default()
+        };
+        assert_eq!(
+            auto.clone().resolve_auto(Some(false)).theme,
+            ThemeName::Lotus
+        );
+        assert_eq!(auto.clone().resolve_auto(Some(true)).theme, ThemeName::Wave);
+        assert_eq!(auto.resolve_auto(None).theme, ThemeName::Wave);
+
+        let fixed = Config {
+            theme: ThemeName::Dragon,
+            ..Config::default()
+        };
+        assert_eq!(fixed.resolve_auto(Some(false)).theme, ThemeName::Dragon);
+    }
+
+    #[test]
+    fn auto_parses_from_toml() {
+        let config: Config = toml::from_str("theme = \"auto\"").unwrap();
+        assert_eq!(config.theme, ThemeName::Auto);
+        assert_eq!(ThemeName::Auto.next(), ThemeName::Wave);
     }
 
     #[test]

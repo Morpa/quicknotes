@@ -1,0 +1,24 @@
+ QUICKNOTES
+──┌ EDIT TODO ───────────────────────────────────────────────────────────────────────────────────┐──
+  │   TITLE                                                                                      │
+▎ │   Write the README                                                                           │w
+  │                                                                                              │─
+  │   DUE                                          PRIORITY                                      │
+ T│    none · today · tomorrow · +3d · 2026-12-31  ‹ high ›                                      │
+  │                                                                                              │
+  │   BODY                                                                                       │
+  │   Write something…                                                                           │
+  │                                                                                              │
+  │                                                                                              │
+  │                                                                                              │
+  │                                                                                              │
+  │                                                                                              │
+  │                                                                                              │
+  │                                                                                              │
+  │                                                                                              │
+  │   TAGS                                                                                       │
+  │   docs                                                                                       │
+  │    #docs                                                                                     │
+  │ ctrl+s save  tab next field  ctrl+t tags  ctrl+p preview  esc cancel                    saved│
+──└──────────────────────────────────────────────────────────────────────────────────────────────┘──
+ ↑↓ move  n new  e edit  space done  / search  t tags  s sort  ? help  q quit                    1/3
