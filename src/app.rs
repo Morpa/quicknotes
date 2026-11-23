@@ -27,6 +27,9 @@ pub const AUTOSAVE_DELAY: Duration = Duration::from_millis(1_200);
 /// Sink for text copied from an item; the system clipboard unless replaced.
 pub type CopyFn = Box<dyn FnMut(&str) -> Result<()>>;
 
+/// Source of pasted content; the system clipboard unless replaced.
+pub type PasteFn = Box<dyn FnMut() -> Result<clipboard::Pasted>>;
+
 /// Deleted items kept for undo.
 pub const UNDO_LIMIT: usize = 20;
 
@@ -134,6 +137,7 @@ pub struct App {
     external_edit: Option<ExternalEdit>,
     /// Writes text to the system clipboard; replaced in tests.
     pub clipboard: CopyFn,
+    pub paste_source: PasteFn,
 }
 
 impl App {
@@ -175,6 +179,7 @@ impl App {
             deleted: Vec::new(),
             external_edit: None,
             clipboard: Box::new(clipboard::copy),
+            paste_source: Box::new(clipboard::paste),
         };
         app.ensure_visible();
         Ok(app)
@@ -334,9 +339,60 @@ impl App {
         }
     }
 
+    /// Handles a bracketed paste. When the clipboard also holds rich HTML for
+    /// the same text (Google Meet, a web page, a document), the markdown
+    /// version is inserted so bold, lists and links survive the terminal.
+    pub fn handle_paste(&mut self, pasted: &str) -> Result<()> {
+        match self.mode {
+            Mode::Edit => {
+                let rich = (self.paste_source)()
+                    .ok()
+                    .filter(|clip| {
+                        clip.markdown.is_some() && clipboard::same_text(&clip.text, pasted)
+                    })
+                    .and_then(|clip| clip.markdown);
+                self.insert_pasted(rich.as_deref().unwrap_or(pasted));
+            }
+            Mode::Search => {
+                let flat = pasted.split_whitespace().collect::<Vec<_>>().join(" ");
+                if !flat.is_empty() {
+                    self.edit_search(|search| search.push_str(&flat))?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// `Ctrl+V` in the editor: pastes the clipboard, as markdown when it has
+    /// rich content.
+    fn paste_clipboard(&mut self) {
+        match (self.paste_source)() {
+            Ok(clip) => self.insert_pasted(&clip.best()),
+            Err(error) => {
+                tracing::warn!(error = %format!("{error:#}"), "clipboard read failed");
+                self.set_status("Nothing to paste", Tone::Warning);
+            }
+        }
+    }
+
+    fn insert_pasted(&mut self, text: &str) {
+        if let Some(editor) = &mut self.editor
+            && editor.insert_paste(text)
+        {
+            editor.dirty = true;
+            editor.last_edit = Instant::now();
+            editor.error = None;
+        }
+    }
+
     fn handle_editor_key(&mut self, key: KeyEvent) -> Result<()> {
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             match key.code {
+                KeyCode::Char('v') => {
+                    self.paste_clipboard();
+                    return Ok(());
+                }
                 KeyCode::Char('s') => return self.save_editor(false),
                 KeyCode::Char('p') => {
                     if let Some(editor) = &mut self.editor {

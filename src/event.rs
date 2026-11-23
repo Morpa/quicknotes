@@ -42,13 +42,28 @@ pub enum Action {
 /// Waits up to `timeout` for a key press. Returns `None` on tick or on events
 /// that are not key presses (resize, focus, mouse, key release).
 pub fn next_key(timeout: Duration) -> Result<Option<KeyEvent>> {
+    Ok(match next_input(timeout)? {
+        Some(Input::Key(key)) => Some(key),
+        _ => None,
+    })
+}
+
+/// A key press or a bracketed paste delivered as one block of text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Input {
+    Key(KeyEvent),
+    Paste(String),
+}
+
+/// Like [`next_key`], but keeps pastes whole instead of dropping them.
+pub fn next_input(timeout: Duration) -> Result<Option<Input>> {
     if !crossterm_event::poll(timeout)? {
         return Ok(None);
     }
 
-    let event = crossterm_event::read()?;
-    Ok(match event {
-        Event::Key(key) if key.kind == KeyEventKind::Press => Some(key),
+    Ok(match crossterm_event::read()? {
+        Event::Key(key) if key.kind == KeyEventKind::Press => Some(Input::Key(key)),
+        Event::Paste(text) => Some(Input::Paste(text)),
         _ => None,
     })
 }

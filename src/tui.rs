@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use crossterm::cursor;
+use crossterm::event::{DisableBracketedPaste, EnableBracketedPaste};
 use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
@@ -46,10 +47,10 @@ fn run_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut App) ->
             .draw(|frame| ui::draw(frame, app))
             .context("drawing the interface")?;
 
-        if let Some(key) = event::next_key(TICK)? {
-            app.handle_key(key)?;
-        } else {
-            app.tick();
+        match event::next_input(TICK)? {
+            Some(event::Input::Key(key)) => app.handle_key(key)?,
+            Some(event::Input::Paste(text)) => app.handle_paste(&text)?,
+            None => app.tick(),
         }
 
         if let Some(request) = app.take_external_edit() {
@@ -72,8 +73,13 @@ fn run_external_editor(
     let outcome = external::edit_text(&external::editor_command(), body, suffix);
 
     enable_raw_mode().context("enabling raw mode")?;
-    execute!(terminal.backend_mut(), EnterAlternateScreen, cursor::Hide)
-        .context("entering the alternate screen")?;
+    execute!(
+        terminal.backend_mut(),
+        EnterAlternateScreen,
+        EnableBracketedPaste,
+        cursor::Hide
+    )
+    .context("entering the alternate screen")?;
     terminal.clear().context("redrawing after the editor")?;
     outcome
 }
@@ -82,7 +88,12 @@ fn init_terminal() -> Result<Terminal<CrosstermBackend<Stdout>>> {
     enable_raw_mode().context("enabling raw mode")?;
 
     let mut stdout = io::stdout();
-    if let Err(error) = execute!(stdout, EnterAlternateScreen, cursor::Hide) {
+    if let Err(error) = execute!(
+        stdout,
+        EnterAlternateScreen,
+        EnableBracketedPaste,
+        cursor::Hide
+    ) {
         let _ = disable_raw_mode();
         return Err(error).context("entering the alternate screen");
     }
@@ -93,8 +104,13 @@ fn init_terminal() -> Result<Terminal<CrosstermBackend<Stdout>>> {
 
 fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
     disable_raw_mode().context("disabling raw mode")?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, cursor::Show)
-        .context("leaving the alternate screen")?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableBracketedPaste,
+        cursor::Show
+    )
+    .context("leaving the alternate screen")?;
     terminal.show_cursor().context("showing the cursor")?;
     Ok(())
 }
@@ -103,7 +119,12 @@ fn install_panic_hook() {
     let previous = panic::take_hook();
     panic::set_hook(Box::new(move |info| {
         let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen, cursor::Show);
+        let _ = execute!(
+            io::stdout(),
+            LeaveAlternateScreen,
+            DisableBracketedPaste,
+            cursor::Show
+        );
         previous(info);
     }));
 }

@@ -59,7 +59,11 @@ impl Editor {
             item.and_then(|item| item.language.clone())
                 .unwrap_or_default(),
         ]);
-        let mut body = TextArea::new(vec![item.map(|item| item.body.clone()).unwrap_or_default()]);
+        // One buffer line per body line; `body_text` joins them back with `\n`.
+        let mut body = TextArea::new(
+            item.map(|item| item.body.split('\n').map(str::to_owned).collect())
+                .unwrap_or_else(|| vec![String::new()]),
+        );
         let mut due = TextArea::new(vec![
             item.and_then(|item| item.due)
                 .map(format_due)
@@ -109,6 +113,10 @@ impl Editor {
         self.body.lines().join("\n")
     }
 
+    pub fn body_line_count(&self) -> usize {
+        self.body.lines().len()
+    }
+
     pub fn language_text(&self) -> String {
         self.language.lines().join("\n")
     }
@@ -145,6 +153,22 @@ impl Editor {
         }
 
         target.input(key)
+    }
+
+    /// Inserts pasted text into the focused field. The body takes it as is
+    /// (line breaks kept, tabs preserved); one-line fields flatten line breaks
+    /// into spaces; the priority field ignores it. Returns whether it changed.
+    pub fn insert_paste(&mut self, text: &str) -> bool {
+        let text = text.replace("\r\n", "\n").replace('\r', "\n");
+        let target = match self.field {
+            Field::Body => return self.body.insert_str(text),
+            Field::Title => &mut self.title,
+            Field::Language => &mut self.language,
+            Field::Due => &mut self.due,
+            Field::Priority => return false,
+        };
+        let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        !flat.is_empty() && target.insert_str(flat)
     }
 
     /// Left/right (or `-`/`+`, space) change the priority; nothing is typed.

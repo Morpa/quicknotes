@@ -262,3 +262,113 @@ fn ctrl_p_toggles_the_split_preview() {
     press_ctrl(&mut app, 'p');
     assert!(!app.editor.as_ref().unwrap().split);
 }
+
+fn open_new_note(app: &mut App) {
+    app.update(Action::New).unwrap();
+    press(app, KeyCode::Tab);
+    assert_eq!(app.editor.as_ref().unwrap().field, Field::Body);
+}
+
+#[test]
+fn bracketed_paste_keeps_lines_and_tabs_in_the_body() {
+    let mut app = app_with_notes();
+    open_new_note(&mut app);
+
+    app.handle_paste("one\r\n\ttwo\nthree").unwrap();
+
+    let editor = app.editor.as_ref().unwrap();
+    assert_eq!(editor.body_text(), "one\n\ttwo\nthree");
+    assert_eq!(editor.field, Field::Body, "a paste never switches fields");
+    assert!(editor.dirty);
+}
+
+#[test]
+fn paste_into_the_title_is_flattened() {
+    let mut app = app_with_notes();
+    app.update(Action::New).unwrap();
+
+    app.handle_paste("line one\n\tline two").unwrap();
+
+    let editor = app.editor.as_ref().unwrap();
+    assert_eq!(editor.title_text(), "line one line two");
+    assert_eq!(editor.field, Field::Title);
+}
+
+#[test]
+fn paste_uses_clipboard_markdown_when_it_matches_the_pasted_text() {
+    use quicknotes::clipboard::Pasted;
+
+    let mut app = app_with_notes();
+    open_new_note(&mut app);
+    app.paste_source = Box::new(|| {
+        Ok(Pasted {
+            text: "Hello world".into(),
+            markdown: Some("Hello **world**".into()),
+        })
+    });
+
+    app.handle_paste("Hello world").unwrap();
+    assert_eq!(app.editor.as_ref().unwrap().body_text(), "Hello **world**");
+
+    // Text from elsewhere (not what the clipboard holds) is left untouched.
+    app.handle_paste(" other").unwrap();
+    assert_eq!(
+        app.editor.as_ref().unwrap().body_text(),
+        "Hello **world** other"
+    );
+}
+
+#[test]
+fn ctrl_v_pastes_the_clipboard_as_markdown() {
+    use quicknotes::clipboard::Pasted;
+
+    let mut app = app_with_notes();
+    open_new_note(&mut app);
+    app.paste_source = Box::new(|| {
+        Ok(Pasted {
+            text: "- a b".into(),
+            markdown: Some("- a\n- b".into()),
+        })
+    });
+
+    press_ctrl(&mut app, 'v');
+    assert_eq!(app.editor.as_ref().unwrap().body_text(), "- a\n- b");
+
+    app.paste_source = Box::new(|| {
+        Ok(Pasted {
+            text: "plain".into(),
+            markdown: None,
+        })
+    });
+    press_ctrl(&mut app, 'v');
+    assert_eq!(app.editor.as_ref().unwrap().body_text(), "- a\n- bplain");
+}
+
+#[test]
+fn ctrl_v_reports_an_unreadable_clipboard() {
+    let mut app = app_with_notes();
+    open_new_note(&mut app);
+    app.paste_source = Box::new(|| Err(anyhow::anyhow!("no display")));
+
+    press_ctrl(&mut app, 'v');
+
+    assert_eq!(app.status.as_ref().unwrap().tone, Tone::Warning);
+    assert_eq!(app.editor.as_ref().unwrap().body_text(), "");
+}
+
+#[test]
+fn editing_a_multiline_body_shows_one_buffer_line_per_line() {
+    let mut db = Database::open_in_memory().unwrap();
+    db.insert_item(&NewItem::note("Multi").body("one\ntwo\n\nthree\n"))
+        .unwrap();
+    let config = Config::default();
+    let theme = Theme::from_config(&config);
+    let mut app = App::new(config, theme, db).unwrap();
+    app.set_area(Rect::new(0, 0, 120, 32));
+
+    app.update(Action::Edit).unwrap();
+
+    let editor = app.editor.as_ref().unwrap();
+    assert_eq!(editor.body_line_count(), 5);
+    assert_eq!(editor.body_text(), "one\ntwo\n\nthree\n");
+}
