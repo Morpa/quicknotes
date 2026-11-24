@@ -9,6 +9,7 @@
                    │ ITEMS                                                      │
                    │   n                  new item                              │
                    │   e / enter          edit                                  │
+                   │   v                  read full screen (y copies)           │
                    │   d / ⌫ / del        delete (asks first)                   │
                    │   u                  undo last delete                      │
                    │   space / x          complete todo                         │
@@ -24,7 +25,6 @@
                    │                                                            │
                    │ OTHER                                                      │
                    │   ctrl+k / :         command palette                       │
-                   │   T                  cycle theme (saved to config)         │
                    │ ↑↓ scroll · any other key closes                           │
 ───────────────────└────────────────────────────────────────────────────────────┘───────────────────
- ↑↓ move  n new  e edit  / search  d delete  s sort  ? help  q quit                              1/2
+ ↑↓ move  n new  e edit  v read  / search  d delete  s sort  ? help  q quit                      1/2

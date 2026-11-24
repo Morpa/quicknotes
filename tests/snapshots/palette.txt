@@ -21,4 +21,4 @@
                     │                                        │
                     │                                        │
 ────────────────────────────────────────────────────────────────────────────────────────────────────
- ↑↓ move  n new  e edit  / search  d delete  s sort  ? help  q quit                              1/2
+ ↑↓ move  n new  e edit  v read  / search  d delete  s sort  ? help  q quit                      1/2

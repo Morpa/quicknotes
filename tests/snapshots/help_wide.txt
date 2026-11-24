@@ -1,17 +1,17 @@
  QUICKNOTES
-──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-▎ NOTES      ┌ HELP ────────────────────────────────────────────────────────────────────────────────────────────────┐
-  TODOS      │ NAVIGATE                                          FIND                                               │
-  SNIPPETS   │   ↑ ↓                move / scroll preview          /                  search (enter keeps)          │────────────
-             │   ← →                switch pane                    s                  sort order                    │
+─────────────┌ HELP ────────────────────────────────────────────────────────────────────────────────────────────────┐─────────────
+▎ NOTES      │ NAVIGATE                                          FIND                                               │
+  TODOS      │   ↑ ↓                move / scroll preview          /                  search (enter keeps)          │
+  SNIPPETS   │   ← →                switch pane                    s                  sort order                    │────────────
              │   tab / shift+tab    next / previous section        esc                clear search, then quit       │
              │   home end pgup pgdn jump                                                                            │
              │                                                   OTHER                                              │
              │ ITEMS                                               ctrl+k / :         command palette               │
              │   n                  new item                       T                  cycle theme (saved to config) │
              │   e / enter          edit                           r                  reload                        │
-             │   d / ⌫ / del        delete (asks first)            ?                  this help                     │
-             │   u                  undo last delete               q / ctrl+c         quit                          │
+             │   v                  read full screen (y copies)    ?                  this help                     │
+             │   d / ⌫ / del        delete (asks first)            q / ctrl+c         quit                          │
+             │   u                  undo last delete                                                                │
              │   space / x          complete todo                                                                   │
              │   p                  todo priority                                                                   │
              │   *                  pin / unpin                                                                     │
@@ -21,4 +21,4 @@
              │ press any key to close                                                                               │
              └──────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- ↑↓ move  n new  e edit  / search  d delete  s sort  ? help  q quit                                                            1/2
+ ↑↓ move  n new  e edit  v read  / search  d delete  s sort  ? help  q quit                                                    1/2

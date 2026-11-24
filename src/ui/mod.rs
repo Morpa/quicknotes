@@ -17,6 +17,7 @@ use crate::ui::widgets::{display_width, due_label, relative_time, truncate};
 pub mod editor;
 pub mod layout;
 pub mod palette;
+pub mod reader;
 pub mod theme;
 pub mod widgets;
 
@@ -49,6 +50,10 @@ pub fn draw(frame: &mut Frame, app: &App) {
         && matches!(app.mode, Mode::Edit | Mode::ConfirmDiscard)
     {
         editor::draw(frame, frame.area(), editor, &app.theme);
+    }
+
+    if app.mode == Mode::Reader {
+        reader::draw(frame, frame.area(), app);
     }
 
     if let Some(palette) = &app.palette
@@ -515,7 +520,7 @@ fn render_confirm(frame: &mut Frame, app: &App) {
             "y discard · n keep editing",
             app.theme.warning(),
         ),
-        Mode::Normal | Mode::Edit | Mode::Search | Mode::Palette | Mode::Help => {
+        Mode::Normal | Mode::Edit | Mode::Search | Mode::Palette | Mode::Help | Mode::Reader => {
             return;
         }
     };
@@ -577,6 +582,7 @@ fn hints_line(app: &App) -> Line<'static> {
             Kind::Note => {}
         }
         pairs.extend([
+            ("v", "read"),
             ("/", "search"),
             ("d", "delete"),
             ("s", "sort"),

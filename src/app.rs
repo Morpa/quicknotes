@@ -19,6 +19,7 @@ use crate::markdown;
 use crate::ui::editor::{Editor, Field, PRIORITY_LABELS, parse_due};
 use crate::ui::layout::{self, Visibility};
 use crate::ui::palette::{self, Command, Palette};
+use crate::ui::reader;
 use crate::ui::theme::Theme;
 
 pub const STATUS_TTL: Duration = Duration::from_secs(4);
@@ -50,6 +51,8 @@ pub enum Mode {
     Search,
     Palette,
     Help,
+    /// Full-screen, scrollable view of the selected item.
+    Reader,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,6 +124,8 @@ pub struct App {
     pub preview_max_scroll: usize,
     pub preview_width: u16,
     pub preview_height: usize,
+    pub reader_scroll: usize,
+    pub reader_max_scroll: usize,
     pub mode: Mode,
     pub editor: Option<Editor>,
     pub pending_delete: Option<PendingDelete>,
@@ -168,6 +173,8 @@ impl App {
             preview_max_scroll: 0,
             preview_width: 0,
             preview_height: 0,
+            reader_scroll: 0,
+            reader_max_scroll: 0,
             mode: Mode::Normal,
             editor: None,
             pending_delete: None,
@@ -196,6 +203,7 @@ impl App {
             Mode::Edit => self.handle_editor_key(key)?,
             Mode::ConfirmDelete | Mode::ConfirmDiscard => self.handle_confirm_key(key)?,
             Mode::Search => self.handle_search_key(key)?,
+            Mode::Reader => self.handle_reader_key(key)?,
             Mode::Palette => self.handle_palette_key(key)?,
             Mode::Help => match key.code {
                 KeyCode::Up => self.help_scroll = self.help_scroll.saturating_sub(1),
@@ -235,6 +243,7 @@ impl App {
             Action::Refresh => self.refresh()?,
             Action::New => self.open_new_editor(),
             Action::Edit => self.open_selected_editor(),
+            Action::Read => self.open_reader(),
             Action::Delete => self.request_delete(),
             Action::ToggleDone => self.toggle_done()?,
             Action::CyclePriority => self.cycle_priority()?,
@@ -269,6 +278,7 @@ impl App {
         self.normalize_focus();
         self.ensure_visible();
         self.refresh_preview_bounds();
+        self.refresh_reader_bounds();
     }
 
     pub fn tick(&mut self) {
@@ -440,7 +450,12 @@ impl App {
             KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => match self.mode {
                 Mode::ConfirmDelete => self.confirm_delete()?,
                 Mode::ConfirmDiscard => self.discard_editor()?,
-                Mode::Normal | Mode::Edit | Mode::Search | Mode::Palette | Mode::Help => {}
+                Mode::Normal
+                | Mode::Edit
+                | Mode::Search
+                | Mode::Palette
+                | Mode::Help
+                | Mode::Reader => {}
             },
             KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc | KeyCode::Char('q') => {
                 self.cancel_confirm();
@@ -1162,6 +1177,61 @@ impl App {
 
         let max_offset = self.items.len().saturating_sub(height);
         self.list_offset = self.list_offset.min(max_offset);
+    }
+
+    fn open_reader(&mut self) {
+        if self.selected_item().is_none() {
+            return;
+        }
+        self.reader_scroll = 0;
+        self.mode = Mode::Reader;
+        self.refresh_reader_bounds();
+    }
+
+    fn refresh_reader_bounds(&mut self) {
+        let body = reader::body_rect(self.area);
+        let lines = self
+            .selected_item()
+            .map_or(0, |item| reader::line_count(item, &self.theme, body.width));
+        self.reader_max_scroll = lines.saturating_sub(usize::from(body.height));
+        self.reader_scroll = self.reader_scroll.min(self.reader_max_scroll);
+    }
+
+    fn handle_reader_key(&mut self, key: KeyEvent) -> Result<()> {
+        let page = reader::body_rect(self.area).height.max(2) as usize - 1;
+        let max = self.reader_max_scroll;
+        let scroll = self.reader_scroll;
+
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            match key.code {
+                KeyCode::Char('c') => self.should_quit = true,
+                KeyCode::Char('d') => self.reader_scroll = (scroll + page / 2).min(max),
+                KeyCode::Char('u') => self.reader_scroll = scroll.saturating_sub(page / 2),
+                _ => {}
+            }
+            return Ok(());
+        }
+
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('v') | KeyCode::Enter => {
+                self.mode = Mode::Normal;
+            }
+            KeyCode::Up | KeyCode::Char('k') => self.reader_scroll = scroll.saturating_sub(1),
+            KeyCode::Down | KeyCode::Char('j') => self.reader_scroll = (scroll + 1).min(max),
+            KeyCode::PageUp | KeyCode::Char('b') => {
+                self.reader_scroll = scroll.saturating_sub(page)
+            }
+            KeyCode::PageDown | KeyCode::Char(' ') => self.reader_scroll = (scroll + page).min(max),
+            KeyCode::Home | KeyCode::Char('g') => self.reader_scroll = 0,
+            KeyCode::End | KeyCode::Char('G') => self.reader_scroll = max,
+            KeyCode::Char('y') => self.copy_selected(),
+            KeyCode::Char('e') => {
+                self.mode = Mode::Normal;
+                self.open_selected_editor();
+            }
+            _ => {}
+        }
+        Ok(())
     }
 
     fn refresh_preview_bounds(&mut self) {

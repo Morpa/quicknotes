@@ -13,4 +13,4 @@
 
 
 ────────────────────────────────────────────
- ↑↓ move  n new  e edit  / search  d del 1/2
+ ↑↓ move  n new  e edit  v read  / searc 1/2

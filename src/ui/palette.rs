@@ -339,6 +339,7 @@ const HELP_LEFT: &[HelpSection] = &[
         &[
             ("n", "new item"),
             ("e / enter", "edit"),
+            ("v", "read full screen (y copies)"),
             ("d / ⌫ / del", "delete (asks first)"),
             ("u", "undo last delete"),
             ("space / x", "complete todo"),
